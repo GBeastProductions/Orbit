@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { audioEngine } from './audio/audioEngine';
+import { ZoomWarpTransition } from './components/ArcadeChrome';
 import { BackgroundBackdrop } from './components/BackgroundBackdrop';
 import { ModDrawer } from './components/ModDrawer';
 import { CanvasRenderState, getWaveModeMeta, OrbitStage } from './components/OrbitStage';
@@ -144,6 +145,8 @@ export default function App() {
   const [listeningSlot, setListeningSlot] = useState<0 | 1 | 2>(0);
   const [summaryData, setSummaryData] = useState<RunSummaryData | null>(null);
   const [showTutorialCompleteStripe, setShowTutorialCompleteStripe] = useState(false);
+  const [warpLaunchLabel, setWarpLaunchLabel] = useState<string | null>(null);
+  const warpTimersRef = useRef<number[]>([]);
 
   // React UI state synced cleanly on discrete events
   const [uiScore, setUiScore] = useState(0);
@@ -687,6 +690,13 @@ export default function App() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      warpTimersRef.current.forEach((id) => window.clearTimeout(id));
+      warpTimersRef.current = [];
+    };
   }, []);
 
   const triggerMiss = useCallback(
@@ -1406,6 +1416,27 @@ export default function App() {
     [resetRound],
   );
 
+  const launchWithZoomWarp = useCallback(
+    (song: SongDefinition, diff: DifficultyId, label: string) => {
+      if (warpTimersRef.current.length > 0) return;
+      audioEngine.ensureContext();
+      audioEngine.playUiLaunch(profileRef.current.soundEnabled);
+      setWarpLaunchLabel(label.toUpperCase());
+
+      const tSwitch = window.setTimeout(() => {
+        launchGameplay(song, diff);
+      }, 240);
+
+      const tDone = window.setTimeout(() => {
+        setWarpLaunchLabel(null);
+        warpTimersRef.current = [];
+      }, 500);
+
+      warpTimersRef.current = [tSwitch, tDone];
+    },
+    [launchGameplay],
+  );
+
   // Orb Vault Purchase Handlers
   const handleUnlockDifficulty = useCallback(
     (diffId: DifficultyId, cost: number) => {
@@ -1662,19 +1693,32 @@ export default function App() {
         <TitleScreen
           profile={profile}
           activeSong={activeSong}
-          onEnterSongSelect={enterSongSelect}
-          onStartTutorial={() => {
-            const tutSong = songs.find((s) => s.id === 'moments_passing') || songs[0];
-            updateProfile({
-              tutorialSongCompleted: false,
-              selectedSongId: 'moments_passing',
-              selectedDifficulty: 'CHILL',
-            });
-            launchGameplay(tutSong, 'CHILL');
+          onPlayPrimary={() => {
+            const p = profileRef.current;
+            if (!p.tutorialSongCompleted) {
+              const tutSong = songs.find((s) => s.id === 'moments_passing') || songs[0];
+              updateProfile({
+                selectedSongId: 'moments_passing',
+                selectedDifficulty: 'CHILL',
+              });
+              launchWithZoomWarp(tutSong, 'CHILL', 'TUTORIAL CALIBRATION');
+              return;
+            }
+            const s = getActiveSong(p);
+            const d = getEffectiveDifficulty(p, s);
+            const songOk = p.devUnlocked || p.unlockedSongs.includes(s.id);
+            const diffOk = p.devUnlocked || p.unlockedDiffs.includes(d);
+            if (!songOk || !diffOk) {
+              enterSongSelect();
+              return;
+            }
+            launchWithZoomWarp(s, d, s.title);
           }}
+          onEnterSongSelect={enterSongSelect}
           onOpenOrbVault={openOrbVault}
           onOpenSettings={() => openPause('ctrl')}
           onOpenIndex={() => openPause('index')}
+          onHoverTick={() => audioEngine.playUiTick(profileRef.current.soundEnabled)}
         />
       )}
 
@@ -1699,7 +1743,7 @@ export default function App() {
               openOrbVault();
               return;
             }
-            launchGameplay(activeSong, activeDifficulty);
+            launchWithZoomWarp(activeSong, activeDifficulty, activeSong.title);
           }}
           onOpenMods={openMods}
           onOpenOrbVault={openOrbVault}
@@ -1947,6 +1991,11 @@ export default function App() {
           setSummaryData(null);
           openOrbVault();
         }}
+      />
+
+      <ZoomWarpTransition
+        active={Boolean(warpLaunchLabel)}
+        label={warpLaunchLabel || ''}
       />
     </div>
   );

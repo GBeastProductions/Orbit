@@ -52,6 +52,66 @@ body,
   font-family: var(--font-mono);
 }
 
+/* Kenney-inspired Sci-Fi / Arcade Chamfered Geometry Primitives */
+.clip-chamfer-lg {
+  clip-path: polygon(
+    18px 0,
+    100% 0,
+    100% calc(100% - 18px),
+    calc(100% - 18px) 100%,
+    0 100%,
+    0 18px
+  );
+}
+
+.clip-chamfer-md {
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+}
+
+.clip-chamfer-sm {
+  clip-path: polygon(
+    6px 0,
+    100% 0,
+    100% calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    0 100%,
+    0 6px
+  );
+}
+
+.clip-blade-right {
+  clip-path: polygon(
+    14px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 14px) 100%,
+    0 100%,
+    0 12px
+  );
+}
+
+.clip-monolith {
+  clip-path: polygon(
+    22px 0,
+    100% 0,
+    100% calc(100% - 22px),
+    calc(100% - 22px) 100%,
+    0 100%,
+    0 22px
+  );
+}
+
+.clip-slant-thumb {
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+
 /* Subtle retro arcade CRT scanline texture (pure CSS, zero GPU blur cost) */
 .arcade-scanlines {
   background-image: repeating-linear-gradient(
@@ -98,8 +158,55 @@ body,
   }
 }
 
+@keyframes slowOrbitSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes reverseOrbitSpin {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes laserScan {
+  0%, 100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.5;
+  }
+  80% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(420%);
+    opacity: 0;
+  }
+}
+
 .animate-arcade-pulse {
   animation: arcadePulse 2.4s ease-in-out infinite;
+}
+
+.animate-orbit-cw {
+  animation: slowOrbitSpin 28s linear infinite;
+}
+
+.animate-orbit-ccw {
+  animation: reverseOrbitSpin 18s linear infinite;
+}
+
+.animate-laser-scan {
+  animation: laserScan 3.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -563,6 +563,46 @@ class OrbitAudioEngine {
     });
   }
 
+  playUiTick(enabled: boolean): void {
+    if (!enabled) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(680, now);
+    osc.frequency.exponentialRampToValueAtTime(920, now + 0.025);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.08, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.032);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.036);
+  }
+
+  playUiLaunch(enabled: boolean): void {
+    if (!enabled) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    [330, 495, 660].forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.035);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.15, now + idx * 0.035 + 0.14);
+      gain.gain.setValueAtTime(0.0001, now + idx * 0.035);
+      gain.gain.linearRampToValueAtTime(0.11, now + idx * 0.035 + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.035 + 0.16);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(now + idx * 0.035);
+      osc.stop(now + idx * 0.035 + 0.18);
+    });
+  }
+
   playLevelClear(enabled: boolean): void {
     if (!enabled) return;
     const ctx = this.ensureContext();

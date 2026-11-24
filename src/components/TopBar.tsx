@@ -50,20 +50,20 @@ export const TopBar: React.FC<TopBarProps> = ({
   const currentDiff = DIFFICULTIES[activeDifficulty] || DIFFICULTIES.CHILL;
 
   return (
-    <header className="flex h-[54px] items-center justify-between gap-3 border-b border-[#222733] bg-[#050608]/95 px-3 sm:px-5 z-20">
+    <header className="flex h-[54px] items-center justify-between gap-3 border-b border-[#1e2636] bg-[#07090d]/95 px-3 sm:px-5 z-20">
       {/* Zone 1: Back to Song Select + Brand + Track */}
       <div className="flex items-center gap-2.5 min-w-0">
         <button
           type="button"
           onClick={onBackToSongSelect}
-          className="flex items-center gap-1 rounded-md border border-[#374052] bg-[#141820] px-2.5 py-1.5 text-xs font-bold text-[#f3f4f6] hover:border-[var(--theme-primary)] cursor-pointer whitespace-nowrap shrink-0"
+          className="clip-chamfer-sm flex items-center gap-1 bg-[#141a24] px-2.5 py-1.5 text-xs font-bold text-[#f3f4f6] hover:bg-[var(--theme-primary)] hover:text-[var(--theme-on-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
           title="Back to Beatmap Select"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Songs</span>
         </button>
 
-        <span className="font-display text-sm font-extrabold tracking-[0.16em] text-[#f3f4f6] whitespace-nowrap shrink-0">
+        <span className="font-display text-sm font-black tracking-[0.18em] text-[#f3f4f6] whitespace-nowrap shrink-0">
           ORBIT
         </span>
 
@@ -71,16 +71,16 @@ export const TopBar: React.FC<TopBarProps> = ({
           {[0, 1, 2, 3].map((idx) => (
             <span
               key={idx}
-              className={`h-1.5 w-1.5 rounded-full border transition-colors duration-75 ${
+              className={`h-1.5 w-1.5 rotate-45 transition-colors duration-75 ${
                 beatLedIndex === idx
-                  ? 'border-white bg-[var(--theme-bright)]'
-                  : 'border-[#2e3545] bg-[#161a23]'
+                  ? 'bg-[var(--theme-bright)]'
+                  : 'bg-[#1b2230]'
               }`}
             />
           ))}
         </div>
 
-        <span className="hidden md:inline text-[#374052]" aria-hidden="true">
+        <span className="hidden md:inline text-[#2b3446]" aria-hidden="true">
           /
         </span>
 
@@ -96,12 +96,11 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Zone 2 & 3: Compact Tactical Controls */}
       <nav className="flex items-center gap-2 shrink-0" aria-label="Game Controls">
-        {/* Orb Bank Trigger */}
         <button
           type="button"
           onClick={onOpenOrbVault}
           title="Open Orb Vault & Unlocks"
-          className="hidden sm:flex items-center gap-1.5 rounded-md border border-[#374052] bg-[#0c0e12] px-2.5 py-1.5 text-xs font-extrabold text-[#fbbf24] hover:border-[#fbbf24] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
+          className="clip-chamfer-sm hidden sm:flex items-center gap-1.5 bg-[#241904] px-2.5 py-1.5 text-xs font-extrabold text-[#fbbf24] hover:bg-[#382706] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
         >
           <Coins className="h-3.5 w-3.5" />
           <span>{orbs.toLocaleString()}</span>
@@ -117,7 +116,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
             aria-haspopup="listbox"
             aria-expanded={diffOpen}
-            className="flex items-center gap-2 rounded-md border border-[#374052] bg-[#0c0e12] px-2.5 sm:px-3 py-1.5 text-xs font-bold tracking-wider text-[#f3f4f6] hover:border-[var(--theme-primary)] hover:bg-[#141820] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="clip-chamfer-sm flex items-center gap-2 bg-[#141a24] px-2.5 sm:px-3 py-1.5 text-xs font-bold tracking-wider text-[#f3f4f6] hover:bg-[#1b2332] transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <span>{currentDiff.name}</span>
             <span className="tabular-nums text-[var(--theme-bright)]">
@@ -134,7 +133,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <div
               role="listbox"
               aria-label="Difficulty Tiers"
-              className="absolute right-0 top-[calc(100%+6px)] z-50 w-72 rounded-lg border border-[#374052] bg-[#0c0e12] p-1.5 flex flex-col gap-1"
+              className="clip-chamfer-md absolute right-0 top-[calc(100%+6px)] z-50 w-72 border border-[#2d3648] bg-[#0b0e14] p-2 flex flex-col gap-1"
             >
               {DIFFICULTY_ORDER.map((diffId) => {
                 const diff = DIFFICULTIES[diffId];
@@ -157,10 +156,10 @@ export const TopBar: React.FC<TopBarProps> = ({
                       }
                       onSelectDifficulty(diffId);
                     }}
-                    className={`flex w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                    className={`clip-chamfer-sm flex w-full flex-col items-start gap-0.5 px-2.5 py-2 text-left transition-colors ${
                       isActive
-                        ? 'border-[var(--theme-primary)] bg-[var(--theme-dim)]'
-                        : 'border-transparent hover:border-[#222733] hover:bg-[#141820]'
+                        ? 'bg-[var(--theme-dim)] ring-1 ring-[var(--theme-primary)]'
+                        : 'hover:bg-[#141a24]'
                     } disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
                   >
                     <div className="flex w-full items-center justify-between text-xs font-bold tracking-wide">
@@ -192,7 +191,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={onOpenMods}
-          className="flex items-center gap-1.5 rounded-md border border-[#222733] bg-[#0c0e12] px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-[#f3f4f6] hover:border-[#374052] hover:bg-[#141820] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          className="clip-chamfer-sm flex items-center gap-1.5 bg-[#141a24] px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-[#f3f4f6] hover:bg-[#1b2332] transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
           <SlidersHorizontal className="h-3.5 w-3.5 text-[#9ca3af]" />
           <span className="hidden sm:inline">Mods</span>
@@ -212,7 +211,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={onOpenPause}
           aria-label="Pause Game and Open Menu"
           title="Pause & Settings (Esc)"
-          className="flex items-center justify-center gap-1.5 rounded-md border border-[#374052] bg-[#141820] px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#f3f4f6] hover:border-[var(--theme-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          className="clip-chamfer-sm flex items-center justify-center gap-1.5 bg-[var(--theme-primary)] px-2.5 sm:px-3 py-1.5 text-xs font-extrabold text-[var(--theme-on-primary)] hover:bg-[var(--theme-bright)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
           <Pause className="h-3.5 w-3.5 fill-current" />
           <span className="hidden sm:inline">Menu</span>

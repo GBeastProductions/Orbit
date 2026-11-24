@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import { Coins } from 'lucide-react';
 import { CHASSIS_THEMES, NEEDLE_TOLERANCE, WAVE_MODES } from '../data/catalog';
 import { signedAngleDiff, TAU } from '../engine/beatmap';
@@ -106,7 +107,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
     if (!ctx) return;
 
     const resize = () => {
-      // Cap DPR at 2 for Chromebook / OTG tablet 60fps efficiency
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = wrap.getBoundingClientRect();
       canvas.width = Math.max(1, Math.floor(rect.width * dpr));
@@ -130,10 +130,8 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       const maxR = Math.min(width / 2, (height - meterReserve) / 2) * 0.94;
       const theme = CHASSIS_THEMES[themeId] || CHASSIS_THEMES.emerald;
 
-      // Clear transparently so per-song BackgroundBackdrop renders visibly behind the dial
       ctx.clearRect(0, 0, width, height);
 
-      // Dynamic Chromebook-friendly Audio-Reactive Radial Rings
       if (bgFxMode === 'dynamic') {
         const energy = st.bassEnergy;
         const isDrop = st.songSection === 'DROP';
@@ -160,7 +158,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         }
       }
 
-      // Check if needle is over any target
       let isIlluminated = false;
       if (st.phase === 'PLAYING') {
         for (let i = 0; i < st.targets.length; i++) {
@@ -182,7 +179,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       const innerRadius = trackRadius - trackWidth / 2;
       const outerRadius = trackRadius + trackWidth / 2;
 
-      // 60-Tick Perimeter Scale
       for (let i = 0; i < 60; i++) {
         const angle = (i * TAU) / 60;
         const isMajor = i % 5 === 0;
@@ -196,7 +192,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.stroke();
       }
 
-      // Machined Outer Bezel (subtle translucency lets album backdrop bleed subtly at edges)
       const bezelGrad = ctx.createLinearGradient(
         cx - bezelOuterR,
         cy - bezelOuterR,
@@ -222,7 +217,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.lineWidth = st.lessonSlowActive ? 2.2 : 1.35;
       ctx.stroke();
 
-      // Recessed Calibration Track
       ctx.beginPath();
       ctx.arc(cx, cy, trackRadius, 0, TAU);
       ctx.strokeStyle = '#0c0f15';
@@ -241,7 +235,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Stepped Velocity Trail
       if (st.phase === 'PLAYING' || st.phase === 'TUTORIAL_CINEMATIC') {
         const speedRatio = Math.min(1, Math.max(0, (st.angularSpeed - 1.2) / 6.2));
         const trailSpan = 0.18 + speedRatio * 0.52;
@@ -260,7 +253,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         }
       }
 
-      // Portal Nodes + Connecting Arc (OSU_PORTAL)
       if (st.portal) {
         const ex = cx + Math.cos(st.portal.entryAngle) * trackRadius;
         const ey = cy + Math.sin(st.portal.entryAngle) * trackRadius;
@@ -286,7 +278,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         });
       }
 
-      // Hazard Mines (HAZARD_DECOY)
       for (let i = 0; i < st.hazards.length; i++) {
         const h = st.hazards[i];
         ctx.beginPath();
@@ -304,7 +295,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.fillText('×', hx, hy);
       }
 
-      // Target Sectors
       const isFailed = st.phase === 'SUMMARY' && Boolean(st.missReasonText);
       for (let i = 0; i < st.targets.length; i++) {
         const t = st.targets[i];
@@ -329,7 +319,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.save();
         ctx.globalAlpha = st.dialVisualAlpha * t.alpha;
 
-        // Slow-motion spotlight ring around the target during tutorials
         if (st.lessonSlowActive) {
           ctx.beginPath();
           ctx.arc(cx, cy, outerRadius + 7, tStart - 0.05, tEnd + 0.05);
@@ -345,7 +334,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.lineCap = 'butt';
         ctx.stroke();
 
-        // Inner 24% Orb Bullseye Core
         if (!isFailed) {
           const bullseyeHalf = t.halfWidth * 0.24;
           ctx.beginPath();
@@ -355,7 +343,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
           ctx.stroke();
         }
 
-        // Sequence Number Label (ORDERED_SEQ)
         if (t.seqNum > 0) {
           const tx = cx + Math.cos(t.angle) * trackRadius;
           const ty = cy + Math.sin(t.angle) * trackRadius;
@@ -377,7 +364,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.restore();
       }
 
-      // Red Miss Error Arc
       if (isFailed && Math.abs(st.missSignedSpan) > 0.001) {
         const ccw = st.missSignedSpan < 0;
         ctx.beginPath();
@@ -387,7 +373,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.stroke();
       }
 
-      // Hit Shockwaves & Judgment Callouts
       for (let i = 0; i < st.hitEffects.length; i++) {
         const fx = st.hitEffects[i];
         const progress = 1 - fx.timer / fx.duration;
@@ -410,7 +395,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.restore();
       }
 
-      // Center Hub Cap
       const hubRadius = innerRadius * 0.52;
       const hubActive = isIlluminated || st.hubStatusTimer > 0;
 
@@ -451,7 +435,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.fillText(centerText, cx, cy);
       }
 
-      // Striker Needle & Pointer Tip
       const sa = st.spinnerAngle;
       const cosA = Math.cos(sa);
       const sinA = Math.sin(sa);
@@ -484,7 +467,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.fillStyle = needleColor;
       ctx.fill();
 
-      // osu!-Style Horizontal Hit Error Timing Bar below dial
       const barW = Math.min(200, width * 0.56);
       const barX = cx - barW / 2;
       const barY = height - 9;
@@ -495,16 +477,13 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.lineWidth = 1;
       ctx.strokeRect(barX, barY - 4, barW, 8);
 
-      // Perfect core band (24%)
       const coreW = barW * 0.24;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
       ctx.fillRect(cx - coreW / 2, barY - 3, coreW, 6);
 
-      // Center zero marker
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(cx - 1, barY - 6, 2, 12);
 
-      // Fading strike ticks (early left / late right)
       for (let i = 0; i < st.hitErrorTicks.length; i++) {
         const tick = st.hitErrorTicks[i];
         const alpha = Math.max(0, 1 - tick.age / 1.8);
@@ -530,14 +509,19 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
   }, [renderStateRef, themeId, bgFxMode]);
 
   return (
-    <main className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden bg-transparent px-4 py-3">
+    <motion.main
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden bg-transparent px-4 py-3"
+    >
       {/* Song Progress Bar */}
       <div className="z-10 mb-2 flex w-[min(88vw,480px)] flex-col gap-1">
         <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#d1d5db] tabular-nums">
           <span className="truncate pr-2">{songHudTitle}</span>
           <span className="shrink-0">{songTimerText}</span>
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-sm border border-[#222733] bg-[#0c0e12]/90">
+        <div className="clip-chamfer-sm h-1.5 w-full overflow-hidden bg-[#0c1017]/90">
           <div
             className="h-full bg-[var(--theme-primary)] transition-[width] duration-100 ease-linear"
             style={{ width: `${songProgressPct.toFixed(1)}%` }}
@@ -555,9 +539,15 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         </div>
         <div className="flex min-w-[56px] flex-col items-center">
           <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Combo</span>
-          <span className="tabular-nums text-xl font-bold leading-tight text-[#d1d5db]">
+          <motion.span
+            key={streak}
+            initial={streak > 0 ? { scale: 1.24 } : false}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.14 }}
+            className="tabular-nums text-xl font-bold leading-tight text-[#d1d5db]"
+          >
             {streak}x
-          </span>
+          </motion.span>
         </div>
         <div className="flex min-w-[56px] flex-col items-center">
           <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Mult</span>
@@ -580,11 +570,23 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         </div>
       </div>
 
-      {/* High-DPI Dial Canvas + Hit Error Meter */}
+      {/* High-DPI Dial Canvas Framed by Kenney-Style HUD Corner Reticles */}
       <div
         ref={wrapRef}
         className="relative flex h-[min(70vw,48vh,405px)] w-[min(70vw,48vh,405px)] items-center justify-center"
       >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 100 100"
+          className="pointer-events-none absolute inset-0 h-full w-full opacity-45"
+          fill="none"
+        >
+          <path d="M2 14 L2 2 L14 2" stroke="var(--theme-bright)" strokeWidth="1.2" />
+          <path d="M86 2 L98 2 L98 14" stroke="var(--theme-bright)" strokeWidth="1.2" />
+          <path d="M2 86 L2 98 L14 98" stroke="var(--theme-bright)" strokeWidth="1.2" />
+          <path d="M86 98 L98 98 L98 86" stroke="var(--theme-bright)" strokeWidth="1.2" />
+        </svg>
+
         <canvas
           ref={canvasRef}
           onPointerDown={(e) => {
@@ -597,9 +599,12 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
           className="block h-full w-full cursor-pointer touch-manipulation"
         />
 
-        {/* In-Song Non-Distorting Dial Slow-Motion Tutorial Highlight Callout */}
         {activeLesson && (
-          <div className="pointer-events-auto absolute -bottom-1 left-1/2 z-20 w-[min(92vw,370px)] -translate-x-1/2 rounded-lg border border-[#fde047] bg-[#0c0e12]/95 px-3.5 py-2.5">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="clip-chamfer-md pointer-events-auto absolute -bottom-1 left-1/2 z-20 w-[min(92vw,375px)] -translate-x-1/2 border border-[#fde047] bg-[#0b0e14]/96 px-4 py-2.5"
+          >
             <div className="flex items-center justify-between gap-2">
               <span className="tabular-nums text-[10px] font-extrabold tracking-widest uppercase text-[#fde047]">
                 Tutorial Guide · {activeLesson.title}
@@ -613,14 +618,14 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
               </button>
             </div>
             <p className="mt-1 text-xs leading-snug text-[#f3f4f6]">{activeLesson.instruction}</p>
-          </div>
+          </motion.div>
         )}
       </div>
 
       {/* Tutorial Complete Banner Stripe */}
       <div
         aria-live="polite"
-        className={`pointer-events-none fixed left-0 right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1 border-y-2 border-[var(--theme-primary)] bg-[#0c0e12]/95 py-4 px-5 transition-all duration-200 ${
+        className={`pointer-events-none fixed left-0 right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1 border-y-2 border-[var(--theme-primary)] bg-[#090c12]/96 py-4 px-5 transition-all duration-200 ${
           showTutorialCompleteStripe ? 'scale-y-100 opacity-100' : 'scale-y-0 opacity-0'
         }`}
       >
@@ -658,7 +663,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
           )}
         </div>
       </footer>
-    </main>
+    </motion.main>
   );
 };
 

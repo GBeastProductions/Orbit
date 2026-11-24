@@ -1,0 +1,4629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ORBIT — Rhythm Calibration</title>
+  <style>
+    :root {
+      /* Crisp Tactile UI Tokens (Zero Glassmorphism / Solid Opaque Surfaces) */
+      --bg-canvas: #000000;
+      --bg-surface: #0c0e12;
+      --bg-elevated: #141820;
+      --bg-input: #07080b;
+
+      --border-subtle: #222733;
+      --border-strong: #374052;
+
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+
+      /* Active Instrument Theme Tokens */
+      --theme-primary: #10b981;
+      --theme-bright: #34d399;
+      --theme-dim: #08261c;
+      --theme-on-primary: #000000;
+
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #a855f7;
+      --cyan: #06b6d4;
+
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+    }
+
+    /* Main Application Shell */
+    .app-shell {
+      display: grid;
+      grid-template-rows: 54px 1fr;
+      width: 100%;
+      height: 100dvh;
+      background-color: var(--bg-canvas);
+    }
+
+    /* Top Header Bar */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background-color: var(--bg-canvas);
+      border-bottom: 1px solid var(--border-subtle);
+      z-index: 20;
+      gap: 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--theme-primary);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-size: 0.875rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .beat-leds {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 4px;
+    }
+
+    .beat-led {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #1c212b;
+      border: 1px solid #2e3545;
+      transition: background-color 0.06s ease, border-color 0.06s ease;
+    }
+
+    .beat-led.active {
+      background-color: var(--theme-bright);
+      border-color: #ffffff;
+    }
+
+    .header-song-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 240px;
+      transition: border-color 0.12s ease, color 0.12s ease;
+    }
+
+    .header-song-chip:hover {
+      border-color: var(--theme-primary);
+      color: var(--text-primary);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Tactile Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background-color: var(--bg-elevated);
+      border-color: var(--border-strong);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn-primary {
+      background-color: var(--theme-primary);
+      border-color: var(--theme-primary);
+      color: var(--theme-on-primary);
+      font-weight: 700;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--theme-bright);
+      border-color: var(--theme-bright);
+    }
+
+    .btn-danger {
+      color: var(--danger);
+      border-color: var(--border-subtle);
+    }
+
+    .btn-danger:hover {
+      border-color: var(--danger);
+      background-color: #1c0b0e;
+    }
+
+    .btn-listening {
+      background-color: var(--warning) !important;
+      border-color: var(--warning) !important;
+      color: #000000 !important;
+      font-weight: 800;
+    }
+
+    /* Smooth Animated Difficulty Pill & Dropdown */
+    .diff-popover-wrap {
+      position: relative;
+    }
+
+    .diff-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-strong);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .diff-pill-btn:hover {
+      background-color: var(--bg-elevated);
+      border-color: var(--theme-primary);
+    }
+
+    .diff-chevron {
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .diff-popover-wrap.open .diff-chevron {
+      transform: rotate(180deg);
+    }
+
+    .diff-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      width: 246px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 60;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-6px) scale(0.97);
+      transform-origin: top right;
+      transition: opacity 0.16s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.16s;
+    }
+
+    .diff-popover-wrap.open .diff-menu {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    .diff-option {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      width: 100%;
+      padding: 8px 10px;
+      text-align: left;
+      background-color: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background-color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .diff-option:hover:not(:disabled) {
+      background-color: var(--bg-elevated);
+      border-color: var(--border-subtle);
+    }
+
+    .diff-option.active {
+      background-color: var(--theme-dim);
+      border-color: var(--theme-primary);
+    }
+
+    .diff-option:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    .diff-opt-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+
+    .diff-opt-sub {
+      font-size: 0.66rem;
+      color: var(--text-secondary);
+    }
+
+    .mult-tag {
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--theme-bright);
+    }
+
+    .notif-dot {
+      display: none;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: var(--warning);
+    }
+
+    .notif-dot.visible {
+      display: inline-block;
+    }
+
+    /* Pause Icon Button */
+    .btn-pause-icon {
+      width: 34px;
+      height: 32px;
+      padding: 0;
+    }
+
+    /* Main Stage */
+    .stage {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg-canvas);
+      padding: 12px 16px;
+      overflow: hidden;
+    }
+
+    /* Song Level Progress Strip */
+    .song-hud-bar {
+      width: min(86vw, 440px);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px;
+      z-index: 5;
+    }
+
+    .song-hud-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+    }
+
+    .song-progress-track {
+      width: 100%;
+      height: 4px;
+      background-color: #141820;
+      border: 1px solid var(--border-subtle);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .song-progress-fill {
+      width: 0%;
+      height: 100%;
+      background-color: var(--theme-primary);
+      transition: width 0.1s linear;
+    }
+
+    /* Score Strip */
+    .hud-scores {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 10px;
+      z-index: 5;
+    }
+
+    .stat-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 74px;
+    }
+
+    .stat-label {
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .stat-value-main {
+      font-size: 2.5rem;
+      font-weight: 800;
+      line-height: 1.02;
+      color: var(--text-primary);
+    }
+
+    .stat-value-sub {
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text-secondary);
+    }
+
+    /* Center Dial Container */
+    .canvas-wrap {
+      position: relative;
+      width: min(74vw, 48vh, 396px);
+      height: min(74vw, 48vh, 396px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas#gameCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    /* Post-Tutorial Complete Banner Stripe Across Screen */
+    .tutorial-complete-stripe {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%) scaleY(0);
+      background-color: var(--bg-surface);
+      border-top: 2px solid var(--theme-primary);
+      border-bottom: 2px solid var(--theme-primary);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      z-index: 55;
+      pointer-events: none;
+      opacity: 0;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+    }
+
+    .tutorial-complete-stripe.active {
+      opacity: 1;
+      transform: translateY(-50%) scaleY(1);
+    }
+
+    .stripe-kicker {
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      color: var(--theme-bright);
+    }
+
+    .stripe-headline {
+      font-size: 1.45rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      color: var(--text-primary);
+    }
+
+    .stripe-sub {
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+
+    /* Footer Prompt & Status */
+    .stage-footer {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-height: 52px;
+      z-index: 5;
+    }
+
+    .prompt-text {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 92vw;
+    }
+
+    .prompt-key {
+      display: inline-block;
+      padding: 1px 7px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+    }
+
+    .prompt-tut {
+      color: var(--theme-bright);
+      font-weight: 700;
+    }
+
+    .prompt-miss {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .telemetry-strip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .mode-pill {
+      padding: 2px 7px;
+      border-radius: 3px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--theme-bright);
+    }
+
+    /* Drawer Scrim (Solid Opaque Dimmer - Zero Blur) */
+    .drawer-scrim {
+      position: fixed;
+      inset: 0;
+      background-color: #000000;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 65;
+      transition: opacity 0.2s ease;
+    }
+
+    .drawer-scrim.open {
+      opacity: 0.78;
+      pointer-events: auto;
+    }
+
+    /* =======================================================================
+       FULL-HEIGHT TOP-TO-BOTTOM PAUSE SIDE PANEL WITH VERTICAL NAVIGATION RAIL
+       ======================================================================= */
+    .pause-side-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(94vw, 490px);
+      background-color: var(--bg-surface);
+      border-left: 1px solid var(--border-strong);
+      display: grid;
+      grid-template-columns: 1fr 56px;
+      z-index: 75;
+      transform: translate3d(100%, 0, 0);
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .pause-side-panel.open {
+      transform: translate3d(0, 0, 0);
+    }
+
+    .pause-main-col {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-width: 0;
+      border-right: 1px solid var(--border-subtle);
+    }
+
+    .pause-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background-color: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-subtle);
+      gap: 8px;
+    }
+
+    .pause-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .pause-kicker {
+      font-size: 0.60rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      color: var(--theme-bright);
+    }
+
+    .pause-heading {
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-primary);
+    }
+
+    .pause-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pause-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pause-pane {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pause-pane.active {
+      display: flex;
+    }
+
+    /* Post-Tutorial Choose Track Instruction Banner inside Tracks Tab */
+    .track-gate-banner {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 12px;
+      background-color: var(--theme-dim);
+      border: 1px solid var(--theme-primary);
+      border-radius: var(--radius-md);
+    }
+
+    .track-gate-banner.visible {
+      display: flex;
+    }
+
+    .track-gate-title {
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: var(--theme-bright);
+    }
+
+    .track-gate-sub {
+      font-size: 0.72rem;
+      color: var(--text-primary);
+    }
+
+    /* Vertical Right-Edge Side Rail */
+    .pause-side-rail {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 4px;
+      gap: 6px;
+      background-color: #08090c;
+    }
+
+    .rail-tab {
+      width: 46px;
+      padding: 9px 2px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background-color: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .rail-tab:hover {
+      background-color: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .rail-tab.active {
+      background-color: var(--theme-dim);
+      border-color: var(--theme-primary);
+      color: var(--theme-bright);
+    }
+
+    .rail-tab-label {
+      font-size: 0.56rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    /* Section Dividers & Clean Stat Cards */
+    .section-divider {
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-bottom: 5px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .records-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .telem-card {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .telem-card.highlight {
+      border-color: var(--theme-primary);
+      background-color: var(--theme-dim);
+    }
+
+    .telem-label {
+      font-size: 0.60rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .telem-value {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .telem-sub {
+      font-size: 0.66rem;
+      color: var(--text-secondary);
+    }
+
+    /* Timing Bias Bar */
+    .bias-box {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .bias-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .bias-track {
+      position: relative;
+      width: 100%;
+      height: 8px;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .bias-fill-early {
+      height: 100%;
+      background-color: var(--theme-primary);
+      transition: width 0.2s ease;
+    }
+
+    /* OSU! Song Level Cards in Tracks Tab */
+    .track-sections-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .osu-song-card {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color 0.14s ease;
+    }
+
+    .osu-song-card.active {
+      border-color: var(--theme-primary);
+      background-color: #0d1613;
+    }
+
+    .osu-song-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.64rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .osu-song-title {
+      font-size: 0.94rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .osu-song-artist {
+      font-size: 0.70rem;
+      font-weight: 700;
+      color: var(--theme-bright);
+    }
+
+    .osu-song-desc {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+    }
+
+    .osu-diff-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-top: 4px;
+    }
+
+    .osu-diff-chip {
+      padding: 5px 9px;
+      font-size: 0.66rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    }
+
+    .osu-diff-chip:hover:not(:disabled) {
+      border-color: var(--theme-primary);
+      color: var(--theme-bright);
+    }
+
+    .osu-diff-chip.active {
+      background-color: var(--theme-primary);
+      border-color: var(--theme-primary);
+      color: var(--theme-on-primary);
+    }
+
+    .osu-diff-chip:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Settings Rows */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+    }
+
+    .setting-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .setting-name {
+      font-size: 0.80rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .setting-desc {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+    }
+
+    .toggle-btn {
+      min-width: 56px;
+      padding: 5px 10px;
+      font-size: 0.70rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background-color: var(--bg-surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .toggle-btn[aria-pressed="true"] {
+      background-color: var(--theme-primary);
+      border-color: var(--theme-primary);
+      color: var(--theme-on-primary);
+    }
+
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+    }
+
+    .slider-top {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--theme-primary);
+      cursor: pointer;
+    }
+
+    .sfx-preset-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .sfx-chip {
+      padding: 5px 9px;
+      font-size: 0.66rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background-color: var(--bg-surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .sfx-chip.active {
+      background-color: var(--theme-primary);
+      border-color: var(--theme-primary);
+      color: var(--theme-on-primary);
+    }
+
+    /* Theme Selector Pills */
+    .theme-group {
+      display: inline-flex;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .theme-option {
+      padding: 5px 9px;
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      border: none;
+      border-right: 1px solid var(--border-strong);
+      background-color: var(--bg-surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .theme-option:last-child {
+      border-right: none;
+    }
+
+    .theme-option[aria-checked="true"] {
+      background-color: var(--theme-primary);
+      color: var(--theme-on-primary);
+    }
+
+    /* Developer Unlock Box */
+    .dev-panel-box {
+      background-color: #0b0e14;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dev-input-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .dev-code-input {
+      flex: 1;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      background-color: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      outline: none;
+    }
+
+    .dev-code-input:focus {
+      border-color: var(--theme-primary);
+    }
+
+    /* Field Index (Codex & Sandbox) inside Pause Panel */
+    .codex-tabs {
+      display: flex;
+      gap: 6px;
+    }
+
+    .codex-tab {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background-color: var(--bg-elevated);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .codex-tab.active {
+      background-color: var(--theme-primary);
+      border-color: var(--theme-primary);
+      color: var(--theme-on-primary);
+    }
+
+    .codex-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .codex-card {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .codex-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .codex-card-title {
+      font-size: 0.80rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .codex-card-desc {
+      font-size: 0.70rem;
+      color: var(--text-secondary);
+    }
+
+    /* Smooth Slide-Up Mod Rack Drawer */
+    .mod-drawer {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      width: min(96vw, 720px);
+      max-height: 78dvh;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-bottom: none;
+      border-radius: 10px 10px 0 0;
+      display: flex;
+      flex-direction: column;
+      z-index: 80;
+      transform: translate3d(-50%, 102%, 0);
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .mod-drawer.open {
+      transform: translate3d(-50%, 0, 0);
+    }
+
+    .mod-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background-color: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-subtle);
+      border-radius: 10px 10px 0 0;
+    }
+
+    .mod-grid {
+      padding: 14px;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+    }
+
+    .mod-card {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+      text-align: left;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: border-color 0.12s ease, background-color 0.12s ease;
+    }
+
+    .mod-card:hover:not(:disabled) {
+      border-color: var(--border-strong);
+    }
+
+    .mod-card.equipped {
+      border-color: var(--theme-primary);
+      background-color: var(--theme-dim);
+    }
+
+    .mod-card:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    .mod-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+
+    .mod-card-desc {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+    }
+
+    .mod-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      padding-top: 4px;
+      border-top: 1px solid #1d222e;
+    }
+
+    @media (max-width: 680px) {
+      .header-song-chip {
+        max-width: 125px;
+      }
+      .beat-leds {
+        display: none;
+      }
+      .records-row {
+        grid-template-columns: 1fr;
+      }
+      .telemetry-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <span class="brand-title">ORBIT</span>
+        <div class="beat-leds" aria-hidden="true">
+          <span class="beat-led"></span>
+          <span class="beat-led"></span>
+          <span class="beat-led"></span>
+          <span class="beat-led"></span>
+        </div>
+        <button id="headerSongChip" class="header-song-chip tabular-nums" type="button" title="Select Beatmap Track">
+          00 · MOMENTS PASSING US
+        </button>
+      </div>
+
+      <nav class="nav-actions" aria-label="Primary Controls">
+        <!-- Animated Difficulty Tier Pill -->
+        <div id="diffPopoverWrap" class="diff-popover-wrap">
+          <button id="diffPillBtn" class="diff-pill-btn tabular-nums" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <span id="diffPillText">CHILL</span>
+            <span id="diffMultBadge" class="mult-tag">1.0x</span>
+            <svg class="diff-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div id="diffMenu" class="diff-menu" role="listbox" aria-label="Difficulty Tiers"></div>
+        </div>
+
+        <!-- Mods Rack Button -->
+        <button id="openModsBtn" class="btn tabular-nums" type="button">
+          Mods <span id="modsActiveCount" class="mult-tag">0/3</span>
+          <span id="modsNotifDot" class="notif-dot" aria-hidden="true"></span>
+        </button>
+
+        <!-- Pause Button (Replaces Settings Gear) -->
+        <button id="openPauseBtn" class="btn btn-pause-icon" type="button" aria-label="Pause Game & Open Menu" title="Pause (Esc)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+            <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+          </svg>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Game Stage -->
+    <main class="stage">
+      <!-- Song Progress Strip -->
+      <div class="song-hud-bar">
+        <div class="song-hud-meta tabular-nums">
+          <span id="songHudTitle">MOMENTS PASSING US · CHILL 1.2★</span>
+          <span id="songHudTimer">0:00 / 0:46 · INTRO</span>
+        </div>
+        <div class="song-progress-track">
+          <div id="songProgressFill" class="song-progress-fill"></div>
+        </div>
+      </div>
+
+      <!-- Score Strip -->
+      <div class="hud-scores">
+        <div class="stat-block">
+          <span class="stat-label">Score</span>
+          <span id="scoreDisplay" class="stat-value-main tabular-nums">0</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Streak</span>
+          <span id="streakDisplay" class="stat-value-sub tabular-nums">0</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Best</span>
+          <span id="bestDisplay" class="stat-value-sub tabular-nums">0</span>
+        </div>
+      </div>
+
+      <!-- High-DPI Calibration Ring -->
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="gameCanvas" aria-label="Spinning Rhythm Calibration Ring"></canvas>
+      </div>
+
+      <!-- Post-Tutorial Complete Banner Stripe -->
+      <div id="tutorialCompleteStripe" class="tutorial-complete-stripe" aria-live="polite">
+        <span class="stripe-kicker tabular-nums">CALIBRATION VERIFIED</span>
+        <span class="stripe-headline tabular-nums">TUTORIAL COMPLETE</span>
+        <span class="stripe-sub">Normal Difficulty &amp; 4 Beatmap Tracks Unlocked</span>
+      </div>
+
+      <!-- Footer Prompt & Wave Info -->
+      <div class="stage-footer">
+        <div id="promptText" class="prompt-text"></div>
+        <div class="telemetry-strip tabular-nums">
+          <span id="modePill" class="mode-pill">CW SWEEP</span>
+          <span id="multLabel">1.00x MULT</span>
+          <span id="shieldLabel" style="display:none;color:var(--theme-bright);">SHIELD ACTIVE</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Solid Opaque Scrim -->
+  <div id="drawerScrim" class="drawer-scrim" aria-hidden="true"></div>
+
+  <!-- =======================================================================
+       FULL-HEIGHT TOP-TO-BOTTOM PAUSE SIDE PANEL WITH VERTICAL NAVIGATION RAIL
+       ======================================================================= -->
+  <aside id="pauseSidePanel" class="pause-side-panel" role="dialog" aria-modal="true" aria-labelledby="pausePanelHeading">
+    <div class="pause-main-col">
+      <div class="pause-header">
+        <div class="pause-title-group">
+          <span id="pauseKicker" class="pause-kicker tabular-nums">GAME PAUSED</span>
+          <h2 id="pausePanelHeading" class="pause-heading">Player Stats</h2>
+        </div>
+        <div class="pause-header-actions">
+          <button id="openDevQuickBtn" class="btn tabular-nums" type="button" style="padding:5px 9px;font-size:0.68rem;">DEV</button>
+          <button id="resumeGameBtn" class="btn btn-primary" type="button">Resume</button>
+        </div>
+      </div>
+
+      <div class="pause-body">
+        <!-- TAB 1: MAIN (PLAYER STATS) -->
+        <div id="ppane-main" class="pause-pane active" role="tabpanel">
+          <span class="section-divider tabular-nums">PERSONAL RECORDS</span>
+          <div class="records-row tabular-nums">
+            <div class="telem-card highlight">
+              <span class="telem-label">Best Score</span>
+              <span id="statAllTimeBest" class="telem-value">0</span>
+              <span class="telem-sub">All-Time Record</span>
+            </div>
+            <div class="telem-card">
+              <span id="statTierBestLabel" class="telem-label">Chill Best</span>
+              <span id="statTierBest" class="telem-value">0</span>
+              <span class="telem-sub">Active Tier</span>
+            </div>
+            <div class="telem-card">
+              <span class="telem-label">Best Streak</span>
+              <span id="statBestStreak" class="telem-value">0</span>
+              <span class="telem-sub">Max Combo</span>
+            </div>
+          </div>
+
+          <span class="section-divider tabular-nums">TIMING &amp; ACCURACY</span>
+          <div class="telemetry-grid tabular-nums">
+            <div class="telem-card">
+              <span class="telem-label">Click / Miss Ratio</span>
+              <span id="statCmRatio" class="telem-value">0.00</span>
+              <span id="statCmCounts" class="telem-sub">0 Hits · 0 Misses</span>
+            </div>
+            <div class="telem-card">
+              <span class="telem-label">Hit Accuracy</span>
+              <span id="statAccuracyPct" class="telem-value">100.0%</span>
+              <span class="telem-sub">Overall Precision</span>
+            </div>
+            <div class="telem-card">
+              <span class="telem-label">Perfect Bullseyes</span>
+              <span id="statPerfectPct" class="telem-value">0.0%</span>
+              <span id="statPerfectCount" class="telem-sub">0 Inner-Core Hits</span>
+            </div>
+            <div class="telem-card">
+              <span class="telem-label">Avg Center Offset</span>
+              <span id="statAvgOffset" class="telem-value">0.0°</span>
+              <span class="telem-sub">Lower is Tighter</span>
+            </div>
+          </div>
+
+          <div class="bias-box tabular-nums">
+            <div class="bias-labels">
+              <span id="statEarlyLabel">EARLY MISSES: 0 (50%)</span>
+              <span id="statLateLabel">LATE MISSES: 0 (50%)</span>
+            </div>
+            <div class="bias-track">
+              <div id="statBiasFill" class="bias-fill-early" style="width: 50%;"></div>
+            </div>
+          </div>
+
+          <span class="section-divider tabular-nums">QUICK JUMP</span>
+          <div class="telemetry-grid">
+            <button id="jumpToTracksBtn" class="btn" type="button">Select Beatmap Track</button>
+            <button id="jumpToIndexBtn" class="btn" type="button">Open Field Index</button>
+          </div>
+        </div>
+
+        <!-- TAB 2: TRACKS (OSU!-STYLE SONG LEVELS) -->
+        <div id="ppane-tracks" class="pause-pane" role="tabpanel">
+          <div id="trackGateBanner" class="track-gate-banner">
+            <span class="track-gate-title tabular-nums">TUTORIAL COMPLETE — CHOOSE A TRACK</span>
+            <span class="track-gate-sub">Select a Chill or Normal chart from one of the 4 tracks below before unpausing.</span>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span class="section-divider tabular-nums" style="border:none;padding:0;">BEATMAP LIBRARY</span>
+            <span id="audioDeckStatus" class="tabular-nums" style="font-size:0.64rem;font-weight:800;color:var(--theme-bright);">5 SONGS READY</span>
+          </div>
+
+          <div id="trackSectionsList" class="track-sections-wrap" role="listbox" aria-label="Song Levels"></div>
+        </div>
+
+        <!-- TAB 3: CONTROLS & TUTORIAL -->
+        <div id="ppane-ctrl" class="pause-pane" role="tabpanel">
+          <span class="section-divider tabular-nums">TRIGGER KEYBINDS</span>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Primary Trigger (Trigger 1)</span>
+              <span class="setting-desc">Default Spacebar</span>
+            </div>
+            <button id="rebind1Btn" class="btn tabular-nums" type="button">SPACE</button>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Secondary Trigger (Trigger 2)</span>
+              <span class="setting-desc">Alternate rhythm key for fast double-taps</span>
+            </div>
+            <button id="rebind2Btn" class="btn tabular-nums" type="button">KEY J</button>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Click / Tap Ring to Hit</span>
+              <span class="setting-desc">Allow direct mouse click or touch tap on the dial</span>
+            </div>
+            <button id="togglePointerBtn" class="toggle-btn tabular-nums" type="button" aria-pressed="true">ON</button>
+          </div>
+
+          <span class="section-divider tabular-nums">ONBOARDING GUIDE</span>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Interactive Tutorial &amp; Calibration Song</span>
+              <span class="setting-desc">Replay the 4-step walkthrough &amp; Moments Passing Us</span>
+            </div>
+            <button id="replayTutorialBtn" class="btn btn-primary" type="button">Start Guide</button>
+          </div>
+        </div>
+
+        <!-- TAB 4: AUDIO & SFX -->
+        <div id="ppane-audio" class="pause-pane" role="tabpanel">
+          <span class="section-divider tabular-nums">SOUNDTRACK ENGINE</span>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Song Soundtrack Playback</span>
+              <span id="activeTrackTitle" class="setting-desc">00 · Moments Passing Us</span>
+            </div>
+            <button id="toggleMusicBtn" class="toggle-btn tabular-nums" type="button" aria-pressed="true">ON</button>
+          </div>
+
+          <div class="slider-row tabular-nums">
+            <div class="slider-top">
+              <span>MUSIC VOLUME</span>
+              <span id="musicVolLabel">75%</span>
+            </div>
+            <input id="musicVolSlider" type="range" min="0" max="100" value="75" />
+          </div>
+
+          <span class="section-divider tabular-nums">TACTILE HIT SFX</span>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Hit &amp; Alert Sound Effects</span>
+              <span id="activeHitSfxLabel" class="setting-desc">Tactile Switch + Song Key</span>
+            </div>
+            <button id="toggleSoundBtn" class="toggle-btn tabular-nums" type="button" aria-pressed="true">ON</button>
+          </div>
+
+          <div class="slider-row tabular-nums">
+            <div class="slider-top">
+              <span>SFX VOLUME</span>
+              <span id="sfxVolLabel">80%</span>
+            </div>
+            <input id="sfxVolSlider" type="range" min="0" max="100" value="80" />
+          </div>
+
+          <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+            <span class="setting-name">Hit Sound Preset</span>
+            <div class="sfx-preset-bar tabular-nums">
+              <button id="sfxModeSwitchBtn" class="sfx-chip active" type="button">SWITCH CLICK</button>
+              <button id="sfxModeRimBtn" class="sfx-chip" type="button">SOFT RIMSHOT</button>
+              <button id="sfxModeHarmonicBtn" class="sfx-chip" type="button">SONG KEY</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 5: DISPLAY, DEV & DATA -->
+        <div id="ppane-disp" class="pause-pane" role="tabpanel">
+          <span class="section-divider tabular-nums">CHASSIS ACCENT THEME</span>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-name">Dial Lighting Palette</span>
+              <span class="setting-desc">High-contrast solid instrument color</span>
+            </div>
+            <div id="themeGroup" class="theme-group" role="radiogroup" aria-label="Chassis Theme">
+              <button class="theme-option tabular-nums" type="button" data-theme="emerald" role="radio" aria-checked="true">EMERALD</button>
+              <button class="theme-option tabular-nums" type="button" data-theme="cobalt" role="radio" aria-checked="false">COBALT</button>
+              <button class="theme-option tabular-nums" type="button" data-theme="amber" role="radio" aria-checked="false">AMBER</button>
+            </div>
+          </div>
+
+          <span class="section-divider tabular-nums">DEVELOPER OVERRIDE</span>
+          <div id="devPanelBox" class="dev-panel-box">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span class="setting-name">Dev Access Code</span>
+              <span id="devStatusTag" class="tabular-nums" style="font-size:0.65rem;font-weight:800;color:var(--text-muted);">LOCKED</span>
+            </div>
+            <span class="setting-desc">Enter dev key to unlock all tracks, difficulties, wave modes, and mods for testing.</span>
+            <div class="dev-input-row">
+              <input id="devCodeInput" class="dev-code-input" type="password" placeholder="Enter dev code..." autocomplete="off" />
+              <button id="devUnlockSubmitBtn" class="btn btn-primary" type="button">Unlock</button>
+            </div>
+          </div>
+
+          <span class="section-divider tabular-nums">CAREER &amp; RESET</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="resetBestBtn" class="btn btn-danger" type="button">Reset Career Stats</button>
+            <button id="resetDefaultsBtn" class="btn" type="button">Restore Defaults</button>
+          </div>
+        </div>
+
+        <!-- TAB 6: FIELD INDEX (15 WAVE MODES, MODS & SANDBOX) -->
+        <div id="ppane-index" class="pause-pane" role="tabpanel">
+          <div class="codex-tabs tabular-nums">
+            <button id="codexTabModes" class="codex-tab active" type="button">15 WAVE MODES</button>
+            <button id="codexTabMods" class="codex-tab" type="button">MODS</button>
+            <button id="codexTabDiffs" class="codex-tab" type="button">TIERS</button>
+          </div>
+          <div id="codexContentList" class="codex-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vertical Right-Edge Side Rail -->
+    <nav class="pause-side-rail" role="tablist" aria-label="Pause Menu Sections">
+      <button class="rail-tab active" type="button" data-ptab="main" role="tab" aria-selected="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+        <span class="rail-tab-label">MAIN</span>
+      </button>
+
+      <button class="rail-tab" type="button" data-ptab="tracks" role="tab" aria-selected="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
+        </svg>
+        <span class="rail-tab-label">TRACKS</span>
+      </button>
+
+      <button class="rail-tab" type="button" data-ptab="ctrl" role="tab" aria-selected="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+          <line x1="6" y1="12" x2="10" y2="12"></line>
+          <line x1="8" y1="10" x2="8" y2="14"></line>
+          <circle cx="15" cy="11" r="1"></circle>
+          <circle cx="18" cy="13" r="1"></circle>
+        </svg>
+        <span class="rail-tab-label">CTRL</span>
+      </button>
+
+      <button class="rail-tab" type="button" data-ptab="audio" role="tab" aria-selected="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <span class="rail-tab-label">AUDIO</span>
+      </button>
+
+      <button class="rail-tab" type="button" data-ptab="disp" role="tab" aria-selected="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span class="rail-tab-label">SET</span>
+      </button>
+
+      <button class="rail-tab" type="button" data-ptab="index" role="tab" aria-selected="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+        <span class="rail-tab-label">INDEX</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Smooth Slide-Up Mod Rack Drawer -->
+  <section id="modDrawer" class="mod-drawer" role="dialog" aria-modal="true" aria-labelledby="modDrawerTitle">
+    <div class="mod-drawer-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h3 id="modDrawerTitle" style="font-size:0.86rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">Mod Cartridges</h3>
+        <span id="modRackSummary" class="mult-tag tabular-nums">0/3 EQUIPPED · 1.00x</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button id="clearModsBtn" class="btn" type="button" style="padding:4px 9px;font-size:0.70rem;">Clear</button>
+        <button id="closeModsBtn" class="btn btn-primary" type="button" style="padding:4px 10px;font-size:0.70rem;">Done</button>
+      </div>
+    </div>
+    <div id="modGrid" class="mod-grid"></div>
+  </section>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* =========================================================================
+       * 1. INSTRUMENT PALETTES, DIFFICULTY TIERS, 5 HARD-CODED SONGS & 15 MODES
+       * ========================================================================= */
+      const STORAGE_KEY = 'orbit_rhythm_v6';
+      const DEV_PASSCODE = 'RainbowBrite38@*';
+      const TAU = Math.PI * 2;
+      const NEEDLE_TOLERANCE = 0.016; // Balanced precision matching visual target cap
+
+      const CHASSIS_THEMES = {
+        emerald: {
+          primary: '#10b981',
+          bright: '#34d399',
+          dim: '#08261c',
+          edgeTick: '#a7f3d0',
+          trailSteps: ['#071c15', '#0b3325', '#0f4f3a', '#10b981'],
+          hubActiveFill: '#061f17',
+          onPrimary: '#000000'
+        },
+        cobalt: {
+          primary: '#3b82f6',
+          bright: '#60a5fa',
+          dim: '#0a1936',
+          edgeTick: '#bfdbfe',
+          trailSteps: ['#0a162b', '#10264d', '#173a75', '#3b82f6'],
+          hubActiveFill: '#081329',
+          onPrimary: '#ffffff'
+        },
+        amber: {
+          primary: '#f59e0b',
+          bright: '#fbbf24',
+          dim: '#261704',
+          edgeTick: '#fde68a',
+          trailSteps: ['#1f1303', '#382206', '#593609', '#f59e0b'],
+          hubActiveFill: '#1c1103',
+          onPrimary: '#000000'
+        }
+      };
+
+      const DIFFICULTIES = {
+        CHILL: {
+          id: 'CHILL',
+          name: 'CHILL',
+          mult: 1.0,
+          baseSpeed: 1.55,
+          arcScale: 1.25,
+          desc: 'Relaxed pace · CW & CCW sweeps'
+        },
+        NORMAL: {
+          id: 'NORMAL',
+          name: 'NORMAL',
+          mult: 1.25,
+          baseSpeed: 2.15,
+          arcScale: 1.0,
+          desc: 'Balanced rhythm · Double-taps & Surges'
+        },
+        HARD: {
+          id: 'HARD',
+          name: 'HARD',
+          mult: 1.55,
+          baseSpeed: 2.75,
+          arcScale: 0.86,
+          desc: 'Fast beats · One-Pass, Clusters & Sequences'
+        },
+        INSANE: {
+          id: 'INSANE',
+          name: 'INSANE',
+          mult: 1.90,
+          baseSpeed: 3.35,
+          arcScale: 0.76,
+          desc: 'High speed · Spring Bounce, Brake & Decay'
+        },
+        DEMON: {
+          id: 'DEMON',
+          name: 'DEMON',
+          mult: 2.35,
+          baseSpeed: 3.95,
+          arcScale: 0.68,
+          desc: 'Extreme · Decoys, Ghost Pulse & Portals'
+        }
+      };
+
+      const DIFFICULTY_ORDER = ['CHILL', 'NORMAL', 'HARD', 'INSANE', 'DEMON'];
+
+      /**
+       * All 5 Songs Hard-Coded Directly Into the Game Engine:
+       * 00: Spaze - Moments Passing Us (Tutorial Track · Chill Only)
+       * 01: Spaze - Play Aliens
+       * 02: Spaze & Ohmterra - Mecha
+       * 03: Little Birdy (Cover)
+       * 04: Spaze - Cosmic Colors
+       */
+      const SONG_CATALOG = [
+        {
+          id: 'moments_passing',
+          num: '00',
+          artist: 'Spaze',
+          title: 'Moments Passing Us',
+          style: 'chill_vocal',
+          genre: 'Tutorial Track · Melodic Future Chill',
+          bpm: 95,
+          keySig: 'F MIN9',
+          scaleNotes: [65, 67, 68, 70, 72, 73, 75, 77],
+          durationSec: 46,
+          chillOnly: true,
+          stars: { CHILL: '1.2★' },
+          desc: 'Warm chill plucks, deep sub-bass & pitched vocal chops. Complete this track to unlock Normal difficulty and the 4 main levels.',
+          chords: [
+            [41, 48, 53, 56, 60], [37, 44, 49, 53, 56],
+            [44, 51, 56, 60, 63], [39, 46, 51, 55, 58]
+          ],
+          leadA: [72, -1, 70, 68, 65, -1, 67, 68, 70, -1, 68, 65, 63, -1, 65, 67],
+          leadB: [77, -1, 75, 72, 70, -1, 68, 70, 72, -1, 75, 77, 80, -1, 77, 75]
+        },
+        {
+          id: 'play_aliens',
+          num: '01',
+          artist: 'Spaze',
+          title: 'Play Aliens',
+          style: 'electro_alien',
+          genre: 'Electro Glitch / Wobble Bass',
+          bpm: 128,
+          keySig: 'F MIN',
+          scaleNotes: [65, 67, 68, 70, 72, 73, 75, 77],
+          durationSec: 54,
+          chillOnly: false,
+          stars: { CHILL: '1.5★', NORMAL: '2.8★', HARD: '4.3★', INSANE: '5.7★', DEMON: '7.2★' },
+          desc: 'Dreamy synth intro into a VHS tape-stop and heavy alien wobble-bass drop with rapid arpeggios.',
+          chords: [
+            [41, 48, 53, 56], [37, 44, 49, 53],
+            [39, 46, 51, 55], [41, 48, 53, 56]
+          ],
+          leadA: [77, 75, 72, -1, 77, 80, 79, 75, 72, -1, 70, 72, 75, 77, 72, -1],
+          leadB: [84, 82, 80, 77, 80, 82, 84, 87, 89, 87, 84, 80, 82, 84, 89, -1]
+        },
+        {
+          id: 'mecha',
+          num: '02',
+          artist: 'Spaze & Ohmterra',
+          title: 'Mecha',
+          style: 'piano_dubstep',
+          genre: 'Melodic Dubstep / Cinematic Piano',
+          bpm: 140,
+          keySig: 'C# MIN',
+          scaleNotes: [61, 63, 64, 66, 68, 69, 71, 73],
+          durationSec: 56,
+          chillOnly: false,
+          stars: { CHILL: '1.6★', NORMAL: '3.0★', HARD: '4.5★', INSANE: '5.9★', DEMON: '7.4★' },
+          desc: 'Emotional solo piano & string intro erupting into massive supersaw chords and heavy half-time mecha bass.',
+          chords: [
+            [37, 44, 49, 52], [33, 40, 45, 49],
+            [40, 47, 52, 56], [35, 42, 47, 51]
+          ],
+          leadA: [73, -1, 71, 68, 64, -1, 66, 68, 71, -1, 73, 76, 75, -1, 71, -1],
+          leadB: [80, -1, 78, 76, 75, 76, 78, -1, 80, -1, 83, 80, 78, -1, 76, -1]
+        },
+        {
+          id: 'little_birdy',
+          num: '03',
+          artist: 'Cover',
+          title: 'Little Birdy',
+          style: 'grunge_rock',
+          genre: 'Indie Grunge / Alternative Rock',
+          bpm: 118,
+          keySig: 'E MAJ',
+          scaleNotes: [64, 66, 68, 69, 71, 73, 75, 76],
+          durationSec: 52,
+          chillOnly: false,
+          stars: { CHILL: '1.4★', NORMAL: '2.7★', HARD: '4.1★', INSANE: '5.5★', DEMON: '6.9★' },
+          desc: 'Crunchy electric guitar power chords, driving acoustic rock drums, and soaring chorus melodies.',
+          chords: [
+            [40, 47, 52, 56], [45, 52, 57, 61],
+            [49, 56, 61, 64], [47, 54, 59, 63]
+          ],
+          leadA: [68, 68, -1, 66, 64, -1, 68, 71, 73, -1, 71, 68, 66, -1, 64, -1],
+          leadB: [76, -1, 75, 73, 71, 73, 75, -1, 76, -1, 78, 76, 75, -1, 71, -1]
+        },
+        {
+          id: 'cosmic_colors',
+          num: '04',
+          artist: 'Spaze',
+          title: 'Cosmic Colors',
+          style: 'kawaii_future',
+          genre: 'Kawaii Future Bass / Happy Rave',
+          bpm: 150,
+          keySig: 'G MAJ',
+          scaleNotes: [67, 69, 71, 72, 74, 76, 78, 79],
+          durationSec: 54,
+          chillOnly: false,
+          stars: { CHILL: '1.7★', NORMAL: '3.2★', HARD: '4.7★', INSANE: '6.1★', DEMON: '7.6★' },
+          desc: 'Sparkly music-box plucks, hyper-bright supersaw drops, and rapid energetic color bursts.',
+          chords: [
+            [43, 50, 55, 59], [48, 55, 60, 64],
+            [52, 59, 64, 67], [50, 57, 62, 66]
+          ],
+          leadA: [79, 78, 79, 83, 81, 79, 78, 74, 76, 78, 79, 83, 86, -1, 83, -1],
+          leadB: [88, 86, 84, 83, 81, 83, 84, 86, 88, 90, 91, 88, 86, -1, 83, -1]
+        }
+      ];
+
+      /* All 15 Wave Modes (Implemented in Gameplay & Viewable in Index Sandbox) */
+      const WAVE_MODES = [
+        { id: 'CW_GREEN', name: 'CW SWEEP', tag: 'CORE', color: '#10b981', desc: 'Standard clockwise sweep. Strike inside the illuminated sector.' },
+        { id: 'CCW_RED', name: 'CCW REVERSE', tag: 'CORE', color: '#ef4444', desc: 'Needle flips counter-clockwise with a crimson target sector.' },
+        { id: 'DOUBLE_TAP', name: 'DOUBLE TAP', tag: 'RHYTHM', color: '#38bdf8', desc: 'Two rapid consecutive hits required on the same target sector.' },
+        { id: 'PURPLE_SURGE', name: 'PURPLE SURGE', tag: 'SPEED', color: '#a855f7', desc: 'Overcharged 1.42x angular velocity surge for one beat.' },
+        { id: 'ONE_PASS', name: 'ONE-PASS', tag: 'STRICT', color: '#f59e0b', desc: 'Do not overshoot! Passing the sector without striking counts as a miss.' },
+        { id: 'SNIPER_MICRO', name: 'MICRO SNIPER', tag: 'PRECISION', color: '#34d399', desc: 'Narrow 0.56x precision sector during melodic breakdowns.' },
+        { id: 'MULTI_CLUSTER', name: 'DUAL CLUSTER', tag: 'MULTI', color: '#22d3ee', desc: 'Two sectors spawn on the track. Clear both in any order.' },
+        { id: 'ORDERED_SEQ', name: 'ORDERED 1-2-3', tag: 'SEQUENCE', color: '#fbbf24', desc: 'Three numbered sectors [1 → 2 → 3] that must be hit in strict order.' },
+        { id: 'CASCADE_CHAIN', name: 'RAPID CASCADE', tag: 'CHAIN', color: '#f472b6', desc: 'Immediate close-range follow-up target spawns right after impact.' },
+        { id: 'DECAY_ARC', name: 'SHRINKING ARC', tag: 'TIMING', color: '#fb923c', desc: 'Target sector narrows steadily the longer you wait to strike.' },
+        { id: 'HAZARD_DECOY', name: 'HAZARD DECOY', tag: 'DANGER', color: '#ef4444', desc: 'Red hazard mines flank the safe sector. Striking a mine fails instantly.' },
+        { id: 'GHOST_PULSE', name: 'GHOST FADE', tag: 'MEMORY', color: '#94a3b8', desc: 'Target fades out as the needle approaches. Trust your rhythm.' },
+        { id: 'SPRING_BOUNCE', name: 'SPRING BOUNCE', tag: 'DYNAMIC', color: '#2dd4bf', desc: 'Target oscillates back and forth along the perimeter track.' },
+        { id: 'BRAKE_DRIFT', name: 'BRAKE DRIFT', tag: 'CURVE', color: '#818cf8', desc: 'Needle decelerates into the apex then snaps out rapidly.' },
+        { id: 'OSU_PORTAL', name: 'PORTAL WARP', tag: 'WARP', color: '#e879f9', desc: 'Entering the portal warps the needle across the dial to the exit sector.' }
+      ];
+
+      /* Mod Cartridges (Max 3 Equipped) */
+      const MOD_CATALOG = [
+        { id: 'DT', code: 'DT', name: 'Double Time', mult: 1.18, unlockHits: 0, desc: '+25% song tempo & needle rotation speed.' },
+        { id: 'HR', code: 'HR', name: 'Hard Rock', mult: 1.15, unlockHits: 0, desc: '-22% target sector width for tighter accuracy.' },
+        { id: 'OC', code: 'OC', name: 'Overclock', mult: 1.12, unlockHits: 0, desc: 'Injects Surge & Double-Tap patterns into Chill/Normal.' },
+        { id: 'OS', code: 'OS', name: 'Portal Link', mult: 1.12, unlockHits: 0, desc: 'Activates Portal Warp nodes during song breakdowns.' },
+        { id: 'HD', code: 'HD', name: 'Hidden Fade', mult: 1.16, unlockHits: 15, desc: 'Sectors fade as the needle closes in.' },
+        { id: 'SD', code: 'SD', name: 'Sudden Death', mult: 1.25, unlockHits: 30, desc: 'Requires strict One-Pass accuracy on every beat.' },
+        { id: 'SH', code: 'SH', name: 'Aegis Shield', mult: 0.85, unlockHits: 0, desc: 'Grants 1 energy shield every 12 streak hits.' },
+        { id: 'EZ', code: 'EZ', name: 'Wide Sector', mult: 0.80, unlockHits: 0, desc: '+28% wider target sectors for learning charts.' }
+      ];
+
+      const TUTORIAL_STEPS = [
+        {
+          type: 'PLAY',
+          modeId: 'CW_GREEN',
+          hitsRequired: 2,
+          label: 'STEP 1/4 · Press SPACE (or tap ring) when the needle enters the GREEN sector'
+        },
+        {
+          type: 'PLAY',
+          modeId: 'CCW_RED',
+          hitsRequired: 2,
+          label: 'STEP 2/4 · RED sectors reverse direction counter-clockwise! Strike 2 targets'
+        },
+        {
+          type: 'UI_TOUR',
+          ctaLabel: 'Next →',
+          label: 'STEP 3/4 · Top bar controls Difficulty Tiers & Mods. Higher tiers unlock 15 wave modes'
+        },
+        {
+          type: 'UI_TOUR',
+          ctaLabel: 'Play Tutorial Song →',
+          label: 'STEP 4/4 · Top-right Pause (||) opens Player Stats, Tracks, Settings & Field Index'
+        }
+      ];
+
+      /* =========================================================================
+       * 2. CENTRALIZED REACTIVE STORE
+       * ========================================================================= */
+      const INITIAL_STATE = {
+        trigger1Code: 'Space',
+        trigger1Label: 'SPACE',
+        trigger2Code: 'KeyJ',
+        trigger2Label: 'KEY J',
+        allowPointerTap: true,
+        musicEnabled: true,
+        musicVolume: 75,
+        soundEnabled: true,
+        sfxVolume: 80,
+        hitSfxMode: 'switch',
+        theme: 'emerald',
+        selectedSongId: 'moments_passing',
+        selectedDifficulty: 'CHILL',
+        equippedMods: [],
+        unlockedDiffs: ['CHILL'],
+        tutorialTourDone: false,
+        tutorialSongCompleted: false,
+        devUnlocked: false,
+        bestScore: 0,
+        tierBestScores: { CHILL: 0, NORMAL: 0, HARD: 0, INSANE: 0, DEMON: 0 },
+        songBestScores: {},
+        bestStreak: 0,
+        totalHits: 0,
+        totalMisses: 0,
+        totalPerfects: 0,
+        offsetDegSum: 0,
+        earlyMisses: 0,
+        lateMisses: 0
+      };
+
+      function createStore(initialState, onChange) {
+        let state = { ...initialState };
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            state = {
+              ...initialState,
+              ...parsed,
+              tierBestScores: { ...initialState.tierBestScores, ...(parsed.tierBestScores || {}) },
+              songBestScores: { ...(parsed.songBestScores || {}) },
+              equippedMods: Array.isArray(parsed.equippedMods) ? parsed.equippedMods.slice(0, 3) : [],
+              unlockedDiffs: Array.isArray(parsed.unlockedDiffs) && parsed.unlockedDiffs.length > 0
+                ? parsed.unlockedDiffs
+                : ['CHILL']
+            };
+            if (!SONG_CATALOG.some((s) => s.id === state.selectedSongId)) {
+              state.selectedSongId = 'moments_passing';
+            }
+            if (!DIFFICULTIES[state.selectedDifficulty]) {
+              state.selectedDifficulty = 'CHILL';
+            }
+            if (!CHASSIS_THEMES[state.theme]) {
+              state.theme = 'emerald';
+            }
+          }
+        } catch (err) {
+          console.warn('Storage read skipped:', err);
+        }
+
+        let saveTimer = null;
+        const persistNow = () => {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          } catch (err) {
+            console.warn('Storage write skipped:', err);
+          }
+        };
+
+        const scheduleSave = (immediate = false) => {
+          if (immediate) {
+            if (saveTimer) {
+              clearTimeout(saveTimer);
+              saveTimer = null;
+            }
+            persistNow();
+            return;
+          }
+          if (!saveTimer) {
+            saveTimer = setTimeout(() => {
+              saveTimer = null;
+              persistNow();
+            }, 600);
+          }
+        };
+
+        return {
+          get: () => state,
+          set: (updater, opts = {}) => {
+            const patch = typeof updater === 'function' ? updater(state) : updater;
+            state = { ...state, ...patch };
+            scheduleSave(Boolean(opts.immediate));
+            if (!opts.silent && onChange) {
+              onChange(state);
+            }
+          },
+          flush: () => scheduleSave(true),
+          resetCareer: () => {
+            state = {
+              ...state,
+              bestScore: 0,
+              tierBestScores: { CHILL: 0, NORMAL: 0, HARD: 0, INSANE: 0, DEMON: 0 },
+              songBestScores: {},
+              bestStreak: 0,
+              totalHits: 0,
+              totalMisses: 0,
+              totalPerfects: 0,
+              offsetDegSum: 0,
+              earlyMisses: 0,
+              lateMisses: 0
+            };
+            scheduleSave(true);
+            if (onChange) onChange(state);
+          },
+          resetSettings: () => {
+            state = {
+              ...state,
+              trigger1Code: 'Space',
+              trigger1Label: 'SPACE',
+              trigger2Code: 'KeyJ',
+              trigger2Label: 'KEY J',
+              allowPointerTap: true,
+              musicEnabled: true,
+              musicVolume: 75,
+              soundEnabled: true,
+              sfxVolume: 80,
+              hitSfxMode: 'switch',
+              theme: 'emerald',
+              equippedMods: []
+            };
+            scheduleSave(true);
+            if (onChange) onChange(state);
+          }
+        };
+      }
+
+      /* =========================================================================
+       * 3. MULTI-STYLE WEB AUDIO ENGINE (5 CUSTOM SONG ARRANGEMENTS + SFX)
+       * ========================================================================= */
+      let audioCtx = null;
+      let musicGainNode = null;
+      let sfxGainNode = null;
+      let sfxNoiseBuffer = null;
+
+      const audioDeck = {
+        renderedBuffers: new Map(),
+        inFlightRenders: new Map(),
+        activeSource: null,
+        isStartingSongId: null,
+        isPlaying: false,
+        startedAtCtxTime: 0,
+        startOffsetSec: 0,
+        playbackRate: 1.0,
+        beatPulse: 0,
+        activeBeatLed: -1,
+        prevRenderedLed: -1
+      };
+
+      function ensureAudio() {
+        if (!audioCtx) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return null;
+          audioCtx = new Ctx();
+          musicGainNode = audioCtx.createGain();
+          sfxGainNode = audioCtx.createGain();
+          musicGainNode.connect(audioCtx.destination);
+          sfxGainNode.connect(audioCtx.destination);
+          updateAudioGains();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+      }
+
+      function updateAudioGains() {
+        const s = store.get();
+        if (musicGainNode && audioCtx) {
+          musicGainNode.gain.setValueAtTime(s.musicEnabled ? (s.musicVolume / 100) * 0.62 : 0, audioCtx.currentTime);
+        }
+        if (sfxGainNode && audioCtx) {
+          sfxGainNode.gain.setValueAtTime(s.soundEnabled ? (s.sfxVolume / 100) * 0.72 : 0, audioCtx.currentTime);
+        }
+      }
+
+      function midiToFreq(midi) {
+        return 440 * Math.pow(2, (midi - 69) / 12);
+      }
+
+      /**
+       * Renders a dedicated multi-layered musical arrangement matching each of
+       * the 5 songs' real style, tempo, chords, basslines, drums, and melodies.
+       */
+      async function renderSongBuffer(song) {
+        if (audioDeck.renderedBuffers.has(song.id)) {
+          return audioDeck.renderedBuffers.get(song.id);
+        }
+        if (audioDeck.inFlightRenders.has(song.id)) {
+          return audioDeck.inFlightRenders.get(song.id);
+        }
+
+        const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!OfflineCtx) return null;
+
+        const promise = (async () => {
+          const sr = 22050;
+          const totalSec = song.durationSec + 1.5;
+          const offCtx = new OfflineCtx(1, Math.ceil(sr * totalSec), sr);
+
+          const master = offCtx.createGain();
+          master.gain.value = 0.75;
+          master.connect(offCtx.destination);
+
+          // Shared noise buffer for snares, hi-hats & risers
+          const noiseLen = Math.floor(sr * 0.35);
+          const noiseBuf = offCtx.createBuffer(1, noiseLen, sr);
+          const nData = noiseBuf.getChannelData(0);
+          for (let i = 0; i < noiseLen; i++) nData[i] = Math.random() * 2 - 1;
+
+          const beatDur = 60 / song.bpm;
+          const stepDur = beatDur / 2; // 8th-note grid
+          const totalSteps = Math.floor(song.durationSec / stepDur);
+
+          for (let step = 0; step < totalSteps; step++) {
+            const t = step * stepDur;
+            const prog = t / song.durationSec;
+            const bar = Math.floor(step / 8);
+            const stepInBar = step % 8;
+            const chord = song.chords[bar % song.chords.length];
+            const isDrop = (prog >= 0.28 && prog < 0.68) || (prog >= 0.78 && prog < 0.94);
+            const isBreak = prog >= 0.68 && prog < 0.78;
+            const leadArr = isDrop ? song.leadB : song.leadA;
+
+            // 1. Kick Drum (4-on-the-floor or half-time dubstep/rock groove)
+            const playKick =
+              song.style === 'piano_dubstep' && isDrop
+                ? (stepInBar === 0 || stepInBar === 3)
+                : song.style === 'grunge_rock'
+                ? (stepInBar === 0 || stepInBar === 3 || stepInBar === 4)
+                : (stepInBar % 2 === 0 && (!isBreak || stepInBar === 0));
+
+            if (playKick && prog < 0.96) {
+              const kOsc = offCtx.createOscillator();
+              const kGain = offCtx.createGain();
+              kOsc.type = 'sine';
+              kOsc.frequency.setValueAtTime(song.style === 'grunge_rock' ? 115 : 138, t);
+              kOsc.frequency.exponentialRampToValueAtTime(38, t + 0.14);
+              kGain.gain.setValueAtTime(isDrop ? 0.44 : 0.28, t);
+              kGain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+              kOsc.connect(kGain);
+              kGain.connect(master);
+              kOsc.start(t);
+              kOsc.stop(t + 0.17);
+            }
+
+            // 2. Snare / Clap / Rimshot
+            const playSnare =
+              song.style === 'piano_dubstep' && isDrop
+                ? stepInBar === 4
+                : (stepInBar === 2 || stepInBar === 6) && prog > 0.08 && prog < 0.95;
+
+            if (playSnare) {
+              const sSrc = offCtx.createBufferSource();
+              sSrc.buffer = noiseBuf;
+              const sFilt = offCtx.createBiquadFilter();
+              sFilt.type = song.style === 'chill_vocal' ? 'bandpass' : 'highpass';
+              sFilt.frequency.value = song.style === 'chill_vocal' ? 1450 : 950;
+              const sGain = offCtx.createGain();
+              sGain.gain.setValueAtTime(song.style === 'chill_vocal' ? 0.14 : (isDrop ? 0.26 : 0.16), t);
+              sGain.gain.exponentialRampToValueAtTime(0.001, t + (song.style === 'chill_vocal' ? 0.07 : 0.13));
+              sSrc.connect(sFilt);
+              sFilt.connect(sGain);
+              sGain.connect(master);
+              sSrc.start(t);
+              sSrc.stop(t + 0.14);
+            }
+
+            // 3. Hi-Hat / Ride Groove
+            if (prog > 0.06 && prog < 0.96 && (isDrop || stepInBar % 2 === 1)) {
+              const hSrc = offCtx.createBufferSource();
+              hSrc.buffer = noiseBuf;
+              const hFilt = offCtx.createBiquadFilter();
+              hFilt.type = 'highpass';
+              hFilt.frequency.value = 5400;
+              const hGain = offCtx.createGain();
+              hGain.gain.setValueAtTime(isDrop ? 0.09 : 0.05, t);
+              hGain.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+              hSrc.connect(hFilt);
+              hFilt.connect(hGain);
+              hGain.connect(master);
+              hSrc.start(t);
+              hSrc.stop(t + 0.05);
+            }
+
+            // 4. Chord Pad / Piano / Grunge Power Chords on Bar Downbeat
+            if (stepInBar === 0) {
+              const chordDur = stepDur * 7.6;
+              chord.forEach((noteMidi, idx) => {
+                if (idx > 2 && !isDrop) return;
+                const cOsc = offCtx.createOscillator();
+                const cFilt = offCtx.createBiquadFilter();
+                const cGain = offCtx.createGain();
+
+                if (song.style === 'grunge_rock') {
+                  cOsc.type = 'sawtooth';
+                  cFilt.type = 'lowpass';
+                  cFilt.frequency.value = isDrop ? 2100 : 1200;
+                } else if (song.style === 'piano_dubstep' && !isDrop) {
+                  cOsc.type = 'triangle';
+                  cFilt.type = 'lowpass';
+                  cFilt.frequency.value = 1800;
+                } else {
+                  cOsc.type = isDrop ? 'sawtooth' : 'triangle';
+                  cFilt.type = 'lowpass';
+                  cFilt.frequency.value = isDrop ? 1650 : 950;
+                }
+
+                cOsc.frequency.setValueAtTime(midiToFreq(noteMidi + 12), t);
+                cGain.gain.setValueAtTime(0.001, t);
+                cGain.gain.linearRampToValueAtTime(isDrop ? 0.075 : 0.055, t + 0.03);
+                cGain.gain.exponentialRampToValueAtTime(0.001, t + chordDur);
+
+                cOsc.connect(cFilt);
+                cFilt.connect(cGain);
+                cGain.connect(master);
+                cOsc.start(t);
+                cOsc.stop(t + chordDur + 0.02);
+              });
+            }
+
+            // 5. Bassline (Wobble / Sub / Rock Bass)
+            if (stepInBar % 2 === 0 || (isDrop && song.style === 'kawaii_future')) {
+              const bOsc = offCtx.createOscillator();
+              const bFilt = offCtx.createBiquadFilter();
+              const bGain = offCtx.createGain();
+              bOsc.type = isDrop && (song.style === 'electro_alien' || song.style === 'piano_dubstep' || song.style === 'grunge_rock')
+                ? 'sawtooth'
+                : 'triangle';
+              bFilt.type = 'lowpass';
+              bFilt.frequency.setValueAtTime(isDrop ? 540 : 280, t);
+              bFilt.frequency.exponentialRampToValueAtTime(140, t + stepDur * 1.4);
+
+              bOsc.frequency.setValueAtTime(midiToFreq(chord[0]), t);
+              bGain.gain.setValueAtTime(isDrop ? 0.22 : 0.14, t);
+              bGain.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 1.5);
+
+              bOsc.connect(bFilt);
+              bFilt.connect(bGain);
+              bGain.connect(master);
+              bOsc.start(t);
+              bOsc.stop(t + stepDur * 1.55);
+            }
+
+            // 6. Signature Lead / Vocal Chop / Piano Melody
+            const noteMidi = leadArr[step % leadArr.length];
+            if (noteMidi > 0 && prog > 0.04) {
+              const lOsc = offCtx.createOscillator();
+              const lFilt = offCtx.createBiquadFilter();
+              const lGain = offCtx.createGain();
+
+              if (song.style === 'chill_vocal') {
+                // Formant-style vocal chop pluck for Moments Passing Us
+                lOsc.type = 'triangle';
+                lFilt.type = 'bandpass';
+                lFilt.frequency.setValueAtTime(1150, t);
+                lFilt.Q.value = 3.2;
+              } else if (song.style === 'kawaii_future') {
+                // Bright music-box / sparkly lead for Cosmic Colors
+                lOsc.type = 'square';
+                lFilt.type = 'lowpass';
+                lFilt.frequency.setValueAtTime(3200, t);
+              } else if (song.style === 'grunge_rock') {
+                // Guitar lead
+                lOsc.type = 'sawtooth';
+                lFilt.type = 'lowpass';
+                lFilt.frequency.setValueAtTime(2200, t);
+              } else {
+                // Melodic synth lead
+                lOsc.type = isDrop ? 'sawtooth' : 'triangle';
+                lFilt.type = 'lowpass';
+                lFilt.frequency.setValueAtTime(isDrop ? 2600 : 1700, t);
+              }
+
+              lOsc.frequency.setValueAtTime(midiToFreq(noteMidi), t);
+              lGain.gain.setValueAtTime(0.001, t);
+              lGain.gain.linearRampToValueAtTime(isDrop ? 0.115 : 0.085, t + 0.012);
+              lGain.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 0.92);
+
+              lOsc.connect(lFilt);
+              lFilt.connect(lGain);
+              lGain.connect(master);
+              lOsc.start(t);
+              lOsc.stop(t + stepDur * 0.96);
+            }
+          }
+
+          const rendered = await offCtx.startRendering();
+          audioDeck.renderedBuffers.set(song.id, rendered);
+          audioDeck.inFlightRenders.delete(song.id);
+          return rendered;
+        })();
+
+        audioDeck.inFlightRenders.set(song.id, promise);
+        return promise;
+      }
+
+      function stopMusicPlayback() {
+        audioDeck.isStartingSongId = null;
+        if (audioDeck.activeSource) {
+          try {
+            audioDeck.activeSource.onended = null;
+            audioDeck.activeSource.stop();
+            audioDeck.activeSource.disconnect();
+          } catch (_) {}
+          audioDeck.activeSource = null;
+        }
+        audioDeck.isPlaying = false;
+      }
+
+      async function startSongAudioAtOffset(songId, offsetSec = 0, loopAudio = false) {
+        const s = store.get();
+        const song = SONG_CATALOG.find((item) => item.id === songId) || SONG_CATALOG[0];
+        if (!s.musicEnabled) {
+          stopMusicPlayback();
+          return;
+        }
+
+        const ctx = ensureAudio();
+        if (!ctx) return;
+
+        stopMusicPlayback();
+        audioDeck.isStartingSongId = song.id;
+        if (audioDeckStatus) audioDeckStatus.textContent = 'SYNCING AUDIO...';
+
+        const buffer = await renderSongBuffer(song);
+        if (audioDeck.isStartingSongId !== song.id || !store.get().musicEnabled || !buffer) {
+          if (audioDeck.isStartingSongId === song.id) {
+            audioDeck.isStartingSongId = null;
+          }
+          return;
+        }
+
+        audioDeck.isStartingSongId = null;
+        const rate = hasMod('DT') ? 1.25 : 1.0;
+        const safeOffset = Math.max(0, Math.min(offsetSec, Math.max(0, buffer.duration - 0.2)));
+
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.loop = loopAudio;
+        src.playbackRate.value = rate;
+        src.connect(musicGainNode);
+
+        audioDeck.activeSource = src;
+        audioDeck.isPlaying = true;
+        audioDeck.startedAtCtxTime = ctx.currentTime;
+        audioDeck.startOffsetSec = safeOffset;
+        audioDeck.playbackRate = rate;
+
+        updateAudioGains();
+        src.start(0, safeOffset);
+        if (audioDeckStatus) audioDeckStatus.textContent = 'BEAT-SYNCED';
+      }
+
+      function getSyncedSongElapsed() {
+        if (!audioDeck.isPlaying || !audioCtx) return null;
+        return audioDeck.startOffsetSec + (audioCtx.currentTime - audioDeck.startedAtCtxTime) * audioDeck.playbackRate;
+      }
+
+      function getSfxNoiseBuffer() {
+        if (sfxNoiseBuffer || !audioCtx) return sfxNoiseBuffer;
+        const len = Math.floor(audioCtx.sampleRate * 0.03);
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.35));
+        }
+        sfxNoiseBuffer = buf;
+        return buf;
+      }
+
+      function playHitSfx(comboCount, isPerfect) {
+        if (!store.get().soundEnabled) return;
+        const ctx = ensureAudio();
+        if (!ctx || !sfxGainNode) return;
+
+        const now = ctx.currentTime;
+        const mode = store.get().hitSfxMode || 'switch';
+        const activeSong = getActiveSong();
+        const scale = activeSong.scaleNotes || [60, 62, 64, 67, 69, 72];
+        const scaleMidi = scale[comboCount % scale.length] + (isPerfect ? 12 : 0);
+        const harmonicFreq = midiToFreq(scaleMidi);
+
+        if (mode === 'harmonic') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(harmonicFreq, now);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.22, now + 0.005);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+          osc.connect(gain);
+          gain.connect(sfxGainNode);
+          osc.start(now);
+          osc.stop(now + 0.14);
+          return;
+        }
+
+        if (mode === 'rimshot') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(isPerfect ? 520 : 440, now);
+          osc.frequency.exponentialRampToValueAtTime(160, now + 0.032);
+          gain.gain.setValueAtTime(0.24, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.038);
+          osc.connect(gain);
+          gain.connect(sfxGainNode);
+          osc.start(now);
+          osc.stop(now + 0.042);
+          return;
+        }
+
+        // Tactile Switch Click + Subtle Song-Key Harmonic Ping
+        const thock = ctx.createOscillator();
+        const thockGain = ctx.createGain();
+        thock.type = 'sine';
+        thock.frequency.setValueAtTime(isPerfect ? 340 : 285, now);
+        thock.frequency.exponentialRampToValueAtTime(75, now + 0.035);
+        thockGain.gain.setValueAtTime(0.25, now);
+        thockGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.042);
+        thock.connect(thockGain);
+        thockGain.connect(sfxGainNode);
+        thock.start(now);
+        thock.stop(now + 0.045);
+
+        const ping = ctx.createOscillator();
+        const pingGain = ctx.createGain();
+        ping.type = 'sine';
+        ping.frequency.setValueAtTime(harmonicFreq, now);
+        pingGain.gain.setValueAtTime(0.001, now);
+        pingGain.gain.linearRampToValueAtTime(isPerfect ? 0.075 : 0.04, now + 0.004);
+        pingGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+        ping.connect(pingGain);
+        pingGain.connect(sfxGainNode);
+        ping.start(now);
+        ping.stop(now + 0.075);
+
+        const nb = getSfxNoiseBuffer();
+        if (nb) {
+          const nSrc = ctx.createBufferSource();
+          nSrc.buffer = nb;
+          const nGain = ctx.createGain();
+          nGain.gain.setValueAtTime(0.11, now);
+          nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
+          nSrc.connect(nGain);
+          nGain.connect(sfxGainNode);
+          nSrc.start(now);
+          nSrc.stop(now + 0.02);
+        }
+      }
+
+      function playShieldBreakSfx() {
+        if (!store.get().soundEnabled) return;
+        const ctx = ensureAudio();
+        if (!ctx || !sfxGainNode) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(110, now + 0.18);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.19);
+        osc.connect(gain);
+        gain.connect(sfxGainNode);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+
+      function playMissSfx() {
+        if (!store.get().soundEnabled) return;
+        const ctx = ensureAudio();
+        if (!ctx || !sfxGainNode) return;
+        const now = ctx.currentTime;
+        [185, 130].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+          gain.gain.setValueAtTime(0.15, now + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.08 + 0.22);
+          osc.connect(gain);
+          gain.connect(sfxGainNode);
+          osc.start(now + idx * 0.08);
+          osc.stop(now + idx * 0.08 + 0.24);
+        });
+      }
+
+      function playLevelClearSfx() {
+        if (!store.get().soundEnabled) return;
+        const ctx = ensureAudio();
+        if (!ctx || !sfxGainNode) return;
+        const now = ctx.currentTime;
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.075);
+          gain.gain.setValueAtTime(0.16, now + idx * 0.075);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.075 + 0.24);
+          osc.connect(gain);
+          gain.connect(sfxGainNode);
+          osc.start(now + idx * 0.075);
+          osc.stop(now + idx * 0.075 + 0.26);
+        });
+      }
+
+      function updateBeatTelemetry(nowSec, dt) {
+        audioDeck.beatPulse = Math.max(0, audioDeck.beatPulse - dt * 4.5);
+        const song = getActiveSong();
+        const bpm = song.bpm * (hasMod('DT') ? 1.25 : 1.0);
+        const tRef = game.songTime > 0 ? game.songTime : nowSec;
+        const ledIdx = Math.floor(tRef / (60 / bpm)) % 4;
+        if (ledIdx !== audioDeck.activeBeatLed) {
+          audioDeck.activeBeatLed = ledIdx;
+          audioDeck.beatPulse = 0.85;
+        }
+        if (ledIdx !== audioDeck.prevRenderedLed) {
+          audioDeck.prevRenderedLed = ledIdx;
+          for (let i = 0; i < beatLedEls.length; i++) {
+            beatLedEls[i].classList.toggle('active', i === ledIdx);
+          }
+        }
+      }
+
+      /* =========================================================================
+       * 4. CIRCULAR MATH & SONG BEATMAP CHOREOGRAPHER
+       * ========================================================================= */
+      function wrapAngle(angle) {
+        let a = angle % TAU;
+        if (a < 0) a += TAU;
+        return a;
+      }
+
+      function signedAngleDiff(current, target) {
+        return Math.atan2(Math.sin(current - target), Math.cos(current - target));
+      }
+
+      function formatTimeSec(sec) {
+        const s = Math.max(0, Math.floor(sec));
+        const mins = Math.floor(s / 60);
+        const rem = s % 60;
+        return `${mins}:${String(rem).padStart(2, '0')}`;
+      }
+
+      function getActiveSong() {
+        const id = store.get().selectedSongId;
+        return SONG_CATALOG.find((s) => s.id === id) || SONG_CATALOG[0];
+      }
+
+      function getActiveDifficulty() {
+        const song = getActiveSong();
+        if (song.chillOnly) return DIFFICULTIES.CHILL;
+        const id = store.get().selectedDifficulty;
+        return DIFFICULTIES[id] || DIFFICULTIES.CHILL;
+      }
+
+      function isDifficultyUnlocked(diffId) {
+        const s = store.get();
+        if (s.devUnlocked) return true;
+        return s.unlockedDiffs.includes(diffId);
+      }
+
+      function hasMod(code) {
+        return store.get().equippedMods.includes(code);
+      }
+
+      function computeTotalMultiplier() {
+        const diff = getActiveDifficulty();
+        let mult = diff.mult;
+        for (const code of store.get().equippedMods) {
+          const mod = MOD_CATALOG.find((m) => m.code === code);
+          if (mod) mult *= mod.mult;
+        }
+        return mult;
+      }
+
+      /**
+       * Builds a deterministic beatmap tailored to the active song's BPM,
+       * musical drops/breakdowns, and selected difficulty tier (deploying all 15 wave modes!).
+       */
+      function buildSongBeatmap(song, diffId) {
+        const beatDur = 60 / song.bpm;
+        const notes = [];
+        let t = Math.max(1.1, beatDur * 2);
+        let idx = 0;
+
+        while (t < song.durationSec - 1.1) {
+          const prog = t / song.durationSec;
+          let section = 'INTRO';
+          if (prog >= 0.16 && prog < 0.28) section = 'BUILD-UP';
+          else if ((prog >= 0.28 && prog < 0.68) || (prog >= 0.78 && prog < 0.94)) section = 'DROP';
+          else if (prog >= 0.68 && prog < 0.78) section = 'BREAKDOWN';
+          else if (prog >= 0.94) section = 'OUTRO';
+
+          const isDrop = section === 'DROP';
+          const isBuild = section === 'BUILD-UP';
+          const isBreak = section === 'BREAKDOWN';
+
+          let stepBeats = 2.0;
+          if (diffId === 'CHILL') {
+            stepBeats = isDrop ? 1.5 : 2.0;
+          } else if (diffId === 'NORMAL') {
+            stepBeats = isDrop ? 1.0 : 1.5;
+          } else if (diffId === 'HARD') {
+            stepBeats = isDrop ? (idx % 2 === 0 ? 0.75 : 1.0) : 1.25;
+          } else if (diffId === 'INSANE') {
+            stepBeats = isDrop ? 0.75 : (isBuild ? 0.75 : 1.0);
+          } else {
+            stepBeats = isDrop ? (idx % 3 === 0 ? 0.5 : 0.75) : 0.75;
+          }
+
+          let modeId = idx % 3 === 1 ? 'CCW_RED' : 'CW_GREEN';
+
+          if (diffId === 'CHILL') {
+            if (hasMod('OC') && isDrop && idx % 3 === 0) {
+              modeId = idx % 6 === 0 ? 'PURPLE_SURGE' : 'DOUBLE_TAP';
+            } else {
+              modeId = (idx % 4 === 1 || idx % 4 === 3) ? 'CCW_RED' : 'CW_GREEN';
+            }
+          } else if (diffId === 'NORMAL') {
+            if (isDrop) {
+              const dropModes = ['CW_GREEN', 'PURPLE_SURGE', 'DOUBLE_TAP', 'CCW_RED', 'MULTI_CLUSTER'];
+              modeId = dropModes[idx % dropModes.length];
+            } else if (isBreak) {
+              modeId = 'SNIPER_MICRO';
+            } else if (isBuild) {
+              modeId = idx % 2 === 0 ? 'DOUBLE_TAP' : 'CW_GREEN';
+            }
+            if (hasMod('OS') && isBreak && idx % 3 === 0) modeId = 'OSU_PORTAL';
+          } else if (diffId === 'HARD') {
+            if (isDrop) {
+              const hardModes = ['ONE_PASS', 'MULTI_CLUSTER', 'CASCADE_CHAIN', 'ORDERED_SEQ', 'DOUBLE_TAP'];
+              modeId = hardModes[idx % hardModes.length];
+            } else if (isBuild) {
+              modeId = idx % 2 === 0 ? 'ORDERED_SEQ' : 'PURPLE_SURGE';
+            } else if (isBreak) {
+              modeId = 'SNIPER_MICRO';
+            }
+            if (hasMod('OS') && isBreak && idx % 3 === 0) modeId = 'OSU_PORTAL';
+          } else if (diffId === 'INSANE') {
+            if (isDrop) {
+              const insaneModes = ['SPRING_BOUNCE', 'BRAKE_DRIFT', 'MULTI_CLUSTER', 'CASCADE_CHAIN', 'ONE_PASS'];
+              modeId = insaneModes[idx % insaneModes.length];
+            } else if (isBuild) {
+              modeId = idx % 2 === 0 ? 'DECAY_ARC' : 'ORDERED_SEQ';
+            } else if (isBreak) {
+              modeId = 'DECAY_ARC';
+            }
+            if (hasMod('OS') && isBreak && idx % 3 === 0) modeId = 'OSU_PORTAL';
+          } else {
+            // DEMON: All advanced modes active
+            if (isBreak && idx % 3 === 0) {
+              modeId = 'OSU_PORTAL';
+            } else if (isDrop) {
+              const demonModes = ['HAZARD_DECOY', 'GHOST_PULSE', 'MULTI_CLUSTER', 'SPRING_BOUNCE', 'BRAKE_DRIFT', 'CASCADE_CHAIN'];
+              modeId = demonModes[idx % demonModes.length];
+            } else if (isBuild) {
+              modeId = idx % 2 === 0 ? 'DECAY_ARC' : 'ORDERED_SEQ';
+            } else {
+              modeId = idx % 2 === 0 ? 'ONE_PASS' : 'HAZARD_DECOY';
+            }
+          }
+
+          if (hasMod('HD') && isBuild && idx % 3 === 0) {
+            modeId = 'GHOST_PULSE';
+          }
+
+          notes.push({
+            index: idx,
+            hitTime: t,
+            stepSec: stepBeats * beatDur,
+            modeId,
+            section
+          });
+
+          t += stepBeats * beatDur;
+          idx += 1;
+        }
+
+        return notes;
+      }
+
+      /* =========================================================================
+       * 5. RUNTIME GAME ENGINE (ALL 15 MODES, TUTORIAL CINEMATIC & TRACK GATE)
+       * ========================================================================= */
+      const game = {
+        phase: 'IDLE',           // 'TUTORIAL' | 'IDLE' | 'PLAYING' | 'PAUSED' | 'GAMEOVER' | 'LEVEL_CLEAR' | 'TUTORIAL_CINEMATIC'
+        score: 0,
+        streak: 0,
+        shields: 0,
+        spinnerAngle: -Math.PI / 2,
+        direction: 1,
+        baseAngularSpeed: 1.55,
+        angularSpeed: 1.55,
+        waveModeId: 'CW_GREEN',
+        targets: [],             // { id, angle, baseAngle, halfWidth, initialHalfWidth, tapsLeft, seqNum, bouncePhase, alpha }
+        hazards: [],             // { angle, halfWidth }
+        portal: null,            // { entryAngle, exitAngle, halfWidth, warped }
+        waveElapsed: 0,
+        passedTargetOnce: false,
+        songTime: 0,
+        songSection: 'INTRO',
+        beatmap: [],
+        beatmapIndex: 0,
+        hitEffects: [],
+        hubStatusText: 'READY',
+        hubStatusColor: null,
+        hubStatusTimer: 0,
+        shakeTime: 0,
+        shakeAmplitude: 0,
+        shakeX: 0,
+        missReason: '',
+        missDegrees: '0.0',
+        missNearestEdge: 0,
+        missSignedSpan: 0,
+        // Tutorial & Post-Tutorial Cinematic State
+        isTutorialSongRun: false,
+        tutorialLives: 3,
+        tutorialStep: 0,
+        tutorialStepHits: 0,
+        cinematicTimer: 0,
+        dialVisualAlpha: 1,
+        dialSpinBoost: 0,
+        mustChooseTrackAfterTutorial: false,
+        sandboxModeId: null,
+        listeningSlot: 0,        // 0 = none, 1 = trigger1, 2 = trigger2
+        confirmResetCareer: false
+      };
+
+      function getBaseHalfWidth() {
+        const diff = getActiveDifficulty();
+        let hw = 0.44 * diff.arcScale;
+        if (hasMod('HR')) hw *= 0.78;
+        if (hasMod('EZ')) hw *= 1.28;
+        return Math.max(0.11, Math.min(0.68, hw));
+      }
+
+      function computeAngularSpeedForStep(stepSec, modeId) {
+        const diff = getActiveDifficulty();
+        let speed = diff.baseSpeed;
+        if (stepSec && stepSec > 0) {
+          // Match angular speed to beat spacing so targets feel natural with the music
+          const targetTravel = 2.55;
+          const rhythmSpeed = targetTravel / Math.max(0.32, stepSec);
+          speed = 0.55 * diff.baseSpeed + 0.45 * rhythmSpeed;
+        }
+        if (hasMod('DT')) speed *= 1.25;
+        if (modeId === 'PURPLE_SURGE') speed *= 1.42;
+        return Math.max(1.25, Math.min(7.8, speed));
+      }
+
+      function spawnNextWave(isFirstNote = false, overrideModeId = null) {
+        const song = getActiveSong();
+        const diff = getActiveDifficulty();
+
+        let note = null;
+        if (game.phase === 'PLAYING' && !game.sandboxModeId && game.beatmap.length > 0) {
+          if (game.beatmapIndex < game.beatmap.length) {
+            note = game.beatmap[game.beatmapIndex];
+            game.beatmapIndex += 1;
+            game.songSection = note.section;
+          } else {
+            // Song finished!
+            handleLevelCleared();
+            return;
+          }
+        }
+
+        const modeId = overrideModeId || (note ? note.modeId : 'CW_GREEN');
+        game.waveModeId = modeId;
+        game.waveElapsed = 0;
+        game.passedTargetOnce = false;
+        game.hazards = [];
+        game.portal = null;
+
+        // Direction logic
+        if (modeId === 'CCW_RED') {
+          game.direction = -1;
+        } else if (modeId === 'CW_GREEN') {
+          game.direction = 1;
+        }
+
+        game.baseAngularSpeed = computeAngularSpeedForStep(note ? note.stepSec : 0.9, modeId);
+        game.angularSpeed = game.baseAngularSpeed;
+
+        const baseHW = getBaseHalfWidth();
+        const minOffset = modeId === 'CASCADE_CHAIN' ? 1.15 : (isFirstNote ? 1.65 : 1.45);
+        const maxOffset = modeId === 'CASCADE_CHAIN' ? 1.85 : 4.65;
+        const primaryOffset = minOffset + Math.random() * (maxOffset - minOffset);
+        const primaryAngle = wrapAngle(game.spinnerAngle + game.direction * primaryOffset);
+
+        if (modeId === 'MULTI_CLUSTER') {
+          const secondAngle = wrapAngle(primaryAngle + game.direction * 1.45);
+          game.targets = [
+            { id: 1, angle: primaryAngle, baseAngle: primaryAngle, halfWidth: baseHW * 0.9, initialHalfWidth: baseHW * 0.9, tapsLeft: 1, seqNum: 0, bouncePhase: 0, alpha: 1 },
+            { id: 2, angle: secondAngle, baseAngle: secondAngle, halfWidth: baseHW * 0.9, initialHalfWidth: baseHW * 0.9, tapsLeft: 1, seqNum: 0, bouncePhase: 0, alpha: 1 }
+          ];
+        } else if (modeId === 'ORDERED_SEQ') {
+          const a1 = wrapAngle(game.spinnerAngle + game.direction * 1.35);
+          const a2 = wrapAngle(a1 + game.direction * 1.35);
+          const a3 = wrapAngle(a2 + game.direction * 1.35);
+          const hw = baseHW * 0.85;
+          game.targets = [
+            { id: 1, angle: a1, baseAngle: a1, halfWidth: hw, initialHalfWidth: hw, tapsLeft: 1, seqNum: 1, bouncePhase: 0, alpha: 1 },
+            { id: 2, angle: a2, baseAngle: a2, halfWidth: hw, initialHalfWidth: hw, tapsLeft: 1, seqNum: 2, bouncePhase: 0, alpha: 1 },
+            { id: 3, angle: a3, baseAngle: a3, halfWidth: hw, initialHalfWidth: hw, tapsLeft: 1, seqNum: 3, bouncePhase: 0, alpha: 1 }
+          ];
+        } else if (modeId === 'OSU_PORTAL') {
+          const entryA = wrapAngle(game.spinnerAngle + game.direction * 1.4);
+          const exitA = wrapAngle(entryA + Math.PI);
+          const targetA = wrapAngle(exitA + game.direction * 1.35);
+          game.portal = { entryAngle: entryA, exitAngle: exitA, halfWidth: 0.24, warped: false };
+          game.targets = [
+            { id: 1, angle: targetA, baseAngle: targetA, halfWidth: baseHW, initialHalfWidth: baseHW, tapsLeft: 1, seqNum: 0, bouncePhase: 0, alpha: 1 }
+          ];
+        } else {
+          const hw = modeId === 'SNIPER_MICRO' ? baseHW * 0.56 : (modeId === 'DECAY_ARC' ? baseHW * 1.25 : baseHW);
+          const taps = modeId === 'DOUBLE_TAP' ? 2 : 1;
+          game.targets = [
+            { id: 1, angle: primaryAngle, baseAngle: primaryAngle, halfWidth: hw, initialHalfWidth: hw, tapsLeft: taps, seqNum: 0, bouncePhase: 0, alpha: 1 }
+          ];
+
+          if (modeId === 'HAZARD_DECOY') {
+            const hazGap = hw + 0.34;
+            game.hazards = [
+              { angle: wrapAngle(primaryAngle - hazGap), halfWidth: 0.14 },
+              { angle: wrapAngle(primaryAngle + hazGap), halfWidth: 0.14 }
+            ];
+          }
+        }
+
+        const modeMeta = WAVE_MODES.find((m) => m.id === modeId) || WAVE_MODES[0];
+        modePill.textContent = modeMeta.name;
+        modePill.style.color = modeMeta.color;
+        modePill.style.borderColor = modeMeta.color;
+      }
+
+      function spawnHitEffect(angle, isPerfect) {
+        const count = isPerfect ? 12 : 8;
+        const sparks = [];
+        for (let i = 0; i < count; i++) {
+          sparks.push({
+            angle: (i * TAU) / count + (isPerfect ? 0 : 0.22),
+            lenScale: i % 2 === 0 ? 1.0 : 0.65
+          });
+        }
+        game.hitEffects.push({
+          timer: 0.32,
+          duration: 0.32,
+          angle,
+          isPerfect,
+          sparks
+        });
+        if (game.hitEffects.length > 4) game.hitEffects.shift();
+      }
+
+      function isNeedleOverAnyTarget() {
+        for (let i = 0; i < game.targets.length; i++) {
+          const t = game.targets[i];
+          if (Math.abs(signedAngleDiff(game.spinnerAngle, t.angle)) <= (t.halfWidth + NEEDLE_TOLERANCE)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function resetRound(autoStart = false, sandboxMode = null) {
+        const song = getActiveSong();
+        const diff = getActiveDifficulty();
+
+        game.sandboxModeId = sandboxMode;
+        game.isTutorialSongRun = song.id === 'moments_passing' && !store.get().tutorialSongCompleted && !sandboxMode;
+        game.tutorialLives = 3;
+        game.score = 0;
+        game.streak = 0;
+        game.shields = 0;
+        game.direction = 1;
+        game.spinnerAngle = -Math.PI / 2;
+        game.songTime = 0;
+        game.songSection = 'INTRO';
+        game.hitEffects = [];
+        game.hubStatusTimer = 0;
+        game.hubStatusColor = null;
+        game.shakeTime = 0;
+        game.shakeX = 0;
+        game.missReason = '';
+        game.dialVisualAlpha = 1;
+        game.dialSpinBoost = 0;
+
+        game.beatmap = buildSongBeatmap(song, diff.id);
+        game.beatmapIndex = 0;
+
+        scoreDisplay.textContent = '0';
+        streakDisplay.textContent = '0';
+        updateShieldUI();
+
+        if (!store.get().tutorialTourDone && !sandboxMode) {
+          game.phase = 'TUTORIAL';
+          game.tutorialStep = 0;
+          game.tutorialStepHits = 0;
+          spawnNextWave(true, TUTORIAL_STEPS[0].modeId);
+        } else {
+          game.phase = autoStart ? 'PLAYING' : 'IDLE';
+          spawnNextWave(true, sandboxMode);
+          if (autoStart) {
+            startSongAudioAtOffset(song.id, 0, Boolean(sandboxMode));
+          } else {
+            stopMusicPlayback();
+          }
+        }
+
+        updateSongHudUI();
+        updatePromptUI();
+      }
+
+      function handleLevelCleared() {
+        stopMusicPlayback();
+        playLevelClearSfx();
+        const song = getActiveSong();
+        const diff = getActiveDifficulty();
+        const s = store.get();
+
+        // Save song best score
+        const prevSongBest = s.songBestScores[song.id] || 0;
+        const nextSongBests = { ...s.songBestScores };
+        if (game.score > prevSongBest) nextSongBests[song.id] = game.score;
+
+        // Unlock next difficulty tier on clear
+        const nextUnlocked = new Set(s.unlockedDiffs);
+        const curIdx = DIFFICULTY_ORDER.indexOf(diff.id);
+        if (curIdx >= 0 && curIdx + 1 < DIFFICULTY_ORDER.length) {
+          nextUnlocked.add(DIFFICULTY_ORDER[curIdx + 1]);
+        }
+
+        if (song.id === 'moments_passing' && !s.tutorialSongCompleted) {
+          // Unlock Normal difficulty and switch selection to the first main track (Play Aliens)
+          nextUnlocked.add('NORMAL');
+          store.set({
+            tutorialSongCompleted: true,
+            unlockedDiffs: Array.from(nextUnlocked),
+            songBestScores: nextSongBests,
+            selectedSongId: 'play_aliens',
+            selectedDifficulty: 'NORMAL'
+          }, { immediate: true });
+
+          // Trigger Post-Tutorial Cinematic: Center circle spins & fades away -> TUTORIAL COMPLETE stripe -> Pause menu opens to Tracks!
+          game.phase = 'TUTORIAL_CINEMATIC';
+          game.cinematicTimer = 0;
+          game.mustChooseTrackAfterTutorial = true;
+          updatePromptUI();
+          return;
+        }
+
+        store.set({
+          unlockedDiffs: Array.from(nextUnlocked),
+          songBestScores: nextSongBests
+        }, { immediate: true });
+
+        game.phase = 'LEVEL_CLEAR';
+        game.hubStatusText = 'CLEARED';
+        game.hubStatusColor = '#34d399';
+        game.hubStatusTimer = 99;
+        updatePromptUI();
+      }
+
+      function triggerMiss(reasonText, targetRef) {
+        if (game.phase === 'TUTORIAL') {
+          // Gentle retry inside onboarding step
+          game.shakeTime = 0.25;
+          game.shakeAmplitude = 7;
+          game.hubStatusText = 'RETRY';
+          game.hubStatusColor = '#f59e0b';
+          game.hubStatusTimer = 0.65;
+          playShieldBreakSfx();
+          const step = TUTORIAL_STEPS[game.tutorialStep];
+          spawnNextWave(false, step ? step.modeId : 'CW_GREEN');
+          return;
+        }
+
+        // Aegis Shield absorbs 1 mistake
+        if (game.shields > 0) {
+          game.shields -= 1;
+          updateShieldUI();
+          game.shakeTime = 0.25;
+          game.shakeAmplitude = 8;
+          game.hubStatusText = 'SHIELDED';
+          game.hubStatusColor = '#34d399';
+          game.hubStatusTimer = 0.7;
+          playShieldBreakSfx();
+          spawnNextWave(false, game.sandboxModeId);
+          return;
+        }
+
+        // Tutorial Song (Moments Passing Us) gives 3 lives so player can finish it
+        if (game.isTutorialSongRun) {
+          game.tutorialLives -= 1;
+          if (game.tutorialLives > 0) {
+            game.streak = 0;
+            streakDisplay.textContent = '0';
+            game.shakeTime = 0.28;
+            game.shakeAmplitude = 9;
+            game.hubStatusText = `${game.tutorialLives} LIVES`;
+            game.hubStatusColor = '#f59e0b';
+            game.hubStatusTimer = 0.85;
+            playShieldBreakSfx();
+            spawnNextWave(false, null);
+            updatePromptUI();
+            return;
+          }
+        }
+
+        stopMusicPlayback();
+        playMissSfx();
+
+        const ref = targetRef || game.targets[0];
+        if (ref) {
+          const tStart = wrapAngle(ref.angle - ref.halfWidth);
+          const tEnd = wrapAngle(ref.angle + ref.halfWidth);
+          const dStart = signedAngleDiff(game.spinnerAngle, tStart);
+          const dEnd = signedAngleDiff(game.spinnerAngle, tEnd);
+          if (Math.abs(dStart) <= Math.abs(dEnd)) {
+            game.missNearestEdge = tStart;
+            game.missSignedSpan = dStart;
+          } else {
+            game.missNearestEdge = tEnd;
+            game.missSignedSpan = dEnd;
+          }
+          const absDelta = Math.abs(signedAngleDiff(game.spinnerAngle, ref.angle));
+          const missRad = Math.max(0.002, absDelta - (ref.halfWidth + NEEDLE_TOLERANCE));
+          game.missDegrees = (missRad * (180 / Math.PI)).toFixed(1);
+          const dirErr = signedAngleDiff(game.spinnerAngle, ref.angle) * game.direction;
+          const isEarly = dirErr < 0;
+
+          const s = store.get();
+          store.set({
+            totalMisses: s.totalMisses + 1,
+            earlyMisses: s.earlyMisses + (isEarly ? 1 : 0),
+            lateMisses: s.lateMisses + (isEarly ? 0 : 1)
+          }, { immediate: true });
+        }
+
+        game.missReason = reasonText;
+        game.phase = 'GAMEOVER';
+        game.shakeTime = 0.34;
+        game.shakeAmplitude = 11;
+        updatePromptUI();
+      }
+
+      function handleTriggerAction() {
+        if (isAnyOverlayOpen()) return;
+
+        if (game.phase === 'TUTORIAL') {
+          const step = TUTORIAL_STEPS[game.tutorialStep];
+          if (!step || step.type !== 'PLAY') return;
+
+          const target = game.targets[0];
+          if (!target) return;
+          const absDelta = Math.abs(signedAngleDiff(game.spinnerAngle, target.angle));
+          if (absDelta <= (target.halfWidth + NEEDLE_TOLERANCE)) {
+            const isPerfect = absDelta <= target.halfWidth * 0.24;
+            playHitSfx(game.tutorialStepHits + 1, isPerfect);
+            spawnHitEffect(game.spinnerAngle, isPerfect);
+            game.tutorialStepHits += 1;
+            game.hubStatusText = isPerfect ? 'PERFECT' : 'GOOD';
+            game.hubStatusColor = isPerfect ? '#ffffff' : null;
+            game.hubStatusTimer = 0.45;
+
+            if (game.tutorialStepHits >= (step.hitsRequired || 2)) {
+              game.tutorialStep += 1;
+              game.tutorialStepHits = 0;
+              const nextStep = TUTORIAL_STEPS[game.tutorialStep];
+              if (nextStep && nextStep.type === 'PLAY') {
+                spawnNextWave(false, nextStep.modeId);
+              }
+            } else {
+              spawnNextWave(false, step.modeId);
+            }
+            updatePromptUI();
+          } else {
+            triggerMiss('OFF TARGET', target);
+          }
+          return;
+        }
+
+        if (game.phase === 'IDLE') {
+          ensureAudio();
+          resetRound(true, game.sandboxModeId);
+          return;
+        }
+
+        if (game.phase === 'GAMEOVER' || game.phase === 'LEVEL_CLEAR') {
+          ensureAudio();
+          resetRound(true, game.sandboxModeId);
+          return;
+        }
+
+        if (game.phase !== 'PLAYING') return;
+
+        // 1. Check Hazard Mines first
+        for (let i = 0; i < game.hazards.length; i++) {
+          const h = game.hazards[i];
+          if (Math.abs(signedAngleDiff(game.spinnerAngle, h.angle)) <= (h.halfWidth + 0.01)) {
+            triggerMiss('HAZARD HIT', game.targets[0]);
+            return;
+          }
+        }
+
+        // 2. Find closest matching target sector
+        let matchedIndex = -1;
+        let bestAbsDelta = Infinity;
+
+        for (let i = 0; i < game.targets.length; i++) {
+          const t = game.targets[i];
+          const absD = Math.abs(signedAngleDiff(game.spinnerAngle, t.angle));
+          if (absD <= (t.halfWidth + NEEDLE_TOLERANCE) && absD < bestAbsDelta) {
+            bestAbsDelta = absD;
+            matchedIndex = i;
+          }
+        }
+
+        if (matchedIndex === -1) {
+          // Missed! Find nearest target for error degree readout
+          let nearest = game.targets[0];
+          let minD = Infinity;
+          for (const t of game.targets) {
+            const d = Math.abs(signedAngleDiff(game.spinnerAngle, t.angle));
+            if (d < minD) {
+              minD = d;
+              nearest = t;
+            }
+          }
+          const dirErr = nearest ? signedAngleDiff(game.spinnerAngle, nearest.angle) * game.direction : 0;
+          triggerMiss(dirErr < 0 ? 'TOO EARLY' : 'TOO LATE', nearest);
+          return;
+        }
+
+        const hitTarget = game.targets[matchedIndex];
+
+        // Check strict 1-2-3 sequence order
+        if (game.waveModeId === 'ORDERED_SEQ' && matchedIndex !== 0) {
+          triggerMiss('WRONG ORDER', hitTarget);
+          return;
+        }
+
+        const isPerfect = bestAbsDelta <= (hitTarget.halfWidth * 0.24);
+        const offsetDeg = bestAbsDelta * (180 / Math.PI);
+
+        // Double-Tap handling
+        if (hitTarget.tapsLeft > 1) {
+          hitTarget.tapsLeft -= 1;
+          hitTarget.halfWidth *= 0.85;
+          playHitSfx(game.streak, isPerfect);
+          spawnHitEffect(game.spinnerAngle, isPerfect);
+          game.hubStatusText = 'TAP AGAIN';
+          game.hubStatusColor = '#38bdf8';
+          game.hubStatusTimer = 0.35;
+          return;
+        }
+
+        // Target cleared!
+        game.targets.splice(matchedIndex, 1);
+        game.streak += 1;
+        const mult = computeTotalMultiplier();
+        const pts = Math.max(10, Math.round((isPerfect ? 100 : 65) * mult));
+        game.score += pts;
+
+        scoreDisplay.textContent = String(game.score);
+        streakDisplay.textContent = String(game.streak);
+
+        // Aegis Shield check
+        if (hasMod('SH') && game.streak % 12 === 0 && game.shields < 2) {
+          game.shields += 1;
+          updateShieldUI();
+        }
+
+        playHitSfx(game.streak, isPerfect);
+        spawnHitEffect(game.spinnerAngle, isPerfect);
+
+        game.hubStatusText = isPerfect ? 'PERFECT' : 'LOCKED';
+        game.hubStatusColor = isPerfect ? '#ffffff' : null;
+        game.hubStatusTimer = 0.40;
+
+        // Update career telemetry in memory (debounced persistence)
+        const s = store.get();
+        const diffId = getActiveDifficulty().id;
+        const nextTierBests = { ...s.tierBestScores };
+        if (game.score > (nextTierBests[diffId] || 0)) {
+          nextTierBests[diffId] = game.score;
+        }
+        store.set({
+          bestScore: Math.max(s.bestScore, game.score),
+          tierBestScores: nextTierBests,
+          bestStreak: Math.max(s.bestStreak, game.streak),
+          totalHits: s.totalHits + 1,
+          totalPerfects: s.totalPerfects + (isPerfect ? 1 : 0),
+          offsetDegSum: s.offsetDegSum + offsetDeg
+        });
+
+        // If multi-target cluster/sequence still has remaining targets, stay on this wave
+        if (game.targets.length > 0) {
+          return;
+        }
+
+        spawnNextWave(false, game.sandboxModeId);
+      }
+
+      function advanceTutorialTourStep() {
+        game.tutorialStep += 1;
+        if (game.tutorialStep >= TUTORIAL_STEPS.length) {
+          finishTutorialTour();
+          return;
+        }
+        updatePromptUI();
+      }
+
+      function finishTutorialTour() {
+        ensureAudio();
+        store.set({
+          tutorialTourDone: true,
+          selectedSongId: 'moments_passing',
+          selectedDifficulty: 'CHILL'
+        }, { immediate: true });
+        resetRound(true, null);
+      }
+
+      /* =========================================================================
+       * 6. DOM REFERENCES & UI SYNCHRONIZATION
+       * ========================================================================= */
+      const canvasWrap = document.getElementById('canvasWrap');
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const beatLedEls = Array.from(document.querySelectorAll('.beat-led'));
+      const headerSongChip = document.getElementById('headerSongChip');
+      const diffPopoverWrap = document.getElementById('diffPopoverWrap');
+      const diffPillBtn = document.getElementById('diffPillBtn');
+      const diffPillText = document.getElementById('diffPillText');
+      const diffMultBadge = document.getElementById('diffMultBadge');
+      const diffMenu = document.getElementById('diffMenu');
+
+      const openModsBtn = document.getElementById('openModsBtn');
+      const modsActiveCount = document.getElementById('modsActiveCount');
+      const modsNotifDot = document.getElementById('modsNotifDot');
+      const openPauseBtn = document.getElementById('openPauseBtn');
+
+      const songHudTitle = document.getElementById('songHudTitle');
+      const songHudTimer = document.getElementById('songHudTimer');
+      const songProgressFill = document.getElementById('songProgressFill');
+
+      const scoreDisplay = document.getElementById('scoreDisplay');
+      const streakDisplay = document.getElementById('streakDisplay');
+      const bestDisplay = document.getElementById('bestDisplay');
+      const tutorialCompleteStripe = document.getElementById('tutorialCompleteStripe');
+
+      const promptText = document.getElementById('promptText');
+      const modePill = document.getElementById('modePill');
+      const multLabel = document.getElementById('multLabel');
+      const shieldLabel = document.getElementById('shieldLabel');
+
+      const drawerScrim = document.getElementById('drawerScrim');
+      const pauseSidePanel = document.getElementById('pauseSidePanel');
+      const pauseKicker = document.getElementById('pauseKicker');
+      const pausePanelHeading = document.getElementById('pausePanelHeading');
+      const openDevQuickBtn = document.getElementById('openDevQuickBtn');
+      const resumeGameBtn = document.getElementById('resumeGameBtn');
+      const railTabBtns = Array.from(document.querySelectorAll('.rail-tab'));
+      const pausePanes = {
+        main: document.getElementById('ppane-main'),
+        tracks: document.getElementById('ppane-tracks'),
+        ctrl: document.getElementById('ppane-ctrl'),
+        audio: document.getElementById('ppane-audio'),
+        disp: document.getElementById('ppane-disp'),
+        index: document.getElementById('ppane-index')
+      };
+
+      const trackGateBanner = document.getElementById('trackGateBanner');
+      const audioDeckStatus = document.getElementById('audioDeckStatus');
+      const trackSectionsList = document.getElementById('trackSectionsList');
+
+      // Stats Elements
+      const statAllTimeBest = document.getElementById('statAllTimeBest');
+      const statTierBestLabel = document.getElementById('statTierBestLabel');
+      const statTierBest = document.getElementById('statTierBest');
+      const statBestStreak = document.getElementById('statBestStreak');
+      const statCmRatio = document.getElementById('statCmRatio');
+      const statCmCounts = document.getElementById('statCmCounts');
+      const statAccuracyPct = document.getElementById('statAccuracyPct');
+      const statPerfectPct = document.getElementById('statPerfectPct');
+      const statPerfectCount = document.getElementById('statPerfectCount');
+      const statAvgOffset = document.getElementById('statAvgOffset');
+      const statEarlyLabel = document.getElementById('statEarlyLabel');
+      const statLateLabel = document.getElementById('statLateLabel');
+      const statBiasFill = document.getElementById('statBiasFill');
+      const jumpToTracksBtn = document.getElementById('jumpToTracksBtn');
+      const jumpToIndexBtn = document.getElementById('jumpToIndexBtn');
+
+      // Controls, Audio, Display, Dev & Index Elements
+      const rebind1Btn = document.getElementById('rebind1Btn');
+      const rebind2Btn = document.getElementById('rebind2Btn');
+      const togglePointerBtn = document.getElementById('togglePointerBtn');
+      const replayTutorialBtn = document.getElementById('replayTutorialBtn');
+
+      const toggleMusicBtn = document.getElementById('toggleMusicBtn');
+      const activeTrackTitle = document.getElementById('activeTrackTitle');
+      const musicVolLabel = document.getElementById('musicVolLabel');
+      const musicVolSlider = document.getElementById('musicVolSlider');
+      const toggleSoundBtn = document.getElementById('toggleSoundBtn');
+      const activeHitSfxLabel = document.getElementById('activeHitSfxLabel');
+      const sfxVolLabel = document.getElementById('sfxVolLabel');
+      const sfxVolSlider = document.getElementById('sfxVolSlider');
+      const sfxModeSwitchBtn = document.getElementById('sfxModeSwitchBtn');
+      const sfxModeRimBtn = document.getElementById('sfxModeRimBtn');
+      const sfxModeHarmonicBtn = document.getElementById('sfxModeHarmonicBtn');
+
+      const themeOptionBtns = Array.from(document.querySelectorAll('.theme-option'));
+      const devStatusTag = document.getElementById('devStatusTag');
+      const devCodeInput = document.getElementById('devCodeInput');
+      const devUnlockSubmitBtn = document.getElementById('devUnlockSubmitBtn');
+      const resetBestBtn = document.getElementById('resetBestBtn');
+      const resetDefaultsBtn = document.getElementById('resetDefaultsBtn');
+
+      const codexTabModes = document.getElementById('codexTabModes');
+      const codexTabMods = document.getElementById('codexTabMods');
+      const codexTabDiffs = document.getElementById('codexTabDiffs');
+      const codexContentList = document.getElementById('codexContentList');
+
+      const modDrawer = document.getElementById('modDrawer');
+      const modRackSummary = document.getElementById('modRackSummary');
+      const modGrid = document.getElementById('modGrid');
+      const clearModsBtn = document.getElementById('clearModsBtn');
+      const closeModsBtn = document.getElementById('closeModsBtn');
+
+      let activePauseTab = 'main';
+      let activeCodexTab = 'modes';
+      let phaseBeforeDrawer = 'IDLE';
+
+      function isAnyOverlayOpen() {
+        return pauseSidePanel.classList.contains('open') || modDrawer.classList.contains('open');
+      }
+
+      function updateShieldUI() {
+        if (game.shields > 0) {
+          shieldLabel.style.display = 'inline';
+          shieldLabel.textContent = `SHIELD x${game.shields}`;
+        } else {
+          shieldLabel.style.display = 'none';
+        }
+      }
+
+      function updateSongHudUI() {
+        const song = getActiveSong();
+        const diff = getActiveDifficulty();
+        const star = song.stars[diff.id] || song.stars.CHILL || '1.2★';
+        songHudTitle.textContent = `${song.title.toUpperCase()} (${song.artist}) · ${diff.name} ${star}`;
+        headerSongChip.textContent = `${song.num} · ${song.title.toUpperCase()}`;
+
+        const cur = Math.min(song.durationSec, game.songTime);
+        const pct = Math.min(100, Math.max(0, (cur / Math.max(1, song.durationSec)) * 100));
+        songProgressFill.style.width = `${pct.toFixed(1)}%`;
+
+        const sectionLabel = game.phase === 'TUTORIAL' ? 'WALKTHROUGH' : game.songSection;
+        songHudTimer.textContent = `${formatTimeSec(cur)} / ${formatTimeSec(song.durationSec)} · ${sectionLabel}`;
+      }
+
+      function makeKeyCap(label) {
+        const span = document.createElement('span');
+        span.className = 'prompt-key tabular-nums';
+        span.textContent = label;
+        return span;
+      }
+
+      function updatePromptUI() {
+        const s = store.get();
+        const song = getActiveSong();
+        const diff = getActiveDifficulty();
+        promptText.replaceChildren();
+
+        if (game.phase === 'TUTORIAL') {
+          const step = TUTORIAL_STEPS[game.tutorialStep] || TUTORIAL_STEPS[0];
+          const stepSpan = document.createElement('span');
+          stepSpan.className = 'prompt-tut tabular-nums';
+          const suffix = step.type === 'PLAY' ? ` (${game.tutorialStepHits}/${step.hitsRequired || 2})` : '';
+          stepSpan.textContent = `${step.label}${suffix}`;
+          promptText.append(stepSpan);
+
+          if (step.type === 'UI_TOUR') {
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'btn btn-primary';
+            nextBtn.type = 'button';
+            nextBtn.style.padding = '3px 10px';
+            nextBtn.style.fontSize = '0.70rem';
+            nextBtn.textContent = step.ctaLabel || 'Next →';
+            nextBtn.addEventListener('click', advanceTutorialTourStep);
+            promptText.append(nextBtn);
+          }
+
+          const skipBtn = document.createElement('button');
+          skipBtn.className = 'btn';
+          skipBtn.type = 'button';
+          skipBtn.style.padding = '3px 8px';
+          skipBtn.style.fontSize = '0.68rem';
+          skipBtn.textContent = 'Skip to Song';
+          skipBtn.addEventListener('click', finishTutorialTour);
+          promptText.append(skipBtn);
+          return;
+        }
+
+        if (game.phase === 'TUTORIAL_CINEMATIC') {
+          const span = document.createElement('span');
+          span.className = 'prompt-tut tabular-nums';
+          span.textContent = 'TUTORIAL COMPLETE — OPENING BEATMAP LIBRARY...';
+          promptText.append(span);
+          return;
+        }
+
+        if (game.phase === 'IDLE') {
+          promptText.append(
+            document.createTextNode(`${song.title} [${diff.name}] · Press `),
+            makeKeyCap(s.trigger1Label),
+            document.createTextNode(' or '),
+            makeKeyCap(s.trigger2Label),
+            document.createTextNode(' to start')
+          );
+          return;
+        }
+
+        if (game.phase === 'PLAYING') {
+          if (game.isTutorialSongRun) {
+            const tag = document.createElement('span');
+            tag.className = 'prompt-tut tabular-nums';
+            tag.textContent = `TUTORIAL TRACK: MOMENTS PASSING US · ${game.tutorialLives} LIVES LEFT`;
+            promptText.append(tag);
+          } else if (game.sandboxModeId) {
+            const tag = document.createElement('span');
+            tag.className = 'prompt-tut tabular-nums';
+            tag.textContent = `FIELD SANDBOX · TESTING ${modePill.textContent}`;
+            promptText.append(tag);
+          } else {
+            promptText.append(
+              document.createTextNode('Strike on the beat with '),
+              makeKeyCap(s.trigger1Label),
+              document.createTextNode(' or '),
+              makeKeyCap(s.trigger2Label)
+            );
+          }
+          return;
+        }
+
+        if (game.phase === 'PAUSED') {
+          promptText.append(document.createTextNode('Paused · Select a track or click Resume'));
+          return;
+        }
+
+        if (game.phase === 'LEVEL_CLEAR') {
+          const clearSpan = document.createElement('span');
+          clearSpan.className = 'prompt-tut tabular-nums';
+          clearSpan.textContent = `TRACK CLEARED! SCORE ${game.score}`;
+          promptText.append(
+            clearSpan,
+            document.createTextNode(' · Press '),
+            makeKeyCap(s.trigger1Label),
+            document.createTextNode(' to replay or open Tracks')
+          );
+          return;
+        }
+
+        if (game.phase === 'GAMEOVER') {
+          const missSpan = document.createElement('span');
+          missSpan.className = 'prompt-miss tabular-nums';
+          missSpan.textContent = `${game.missReason} (${game.missDegrees}°)`;
+          promptText.append(
+            missSpan,
+            document.createTextNode(' · Press '),
+            makeKeyCap(s.trigger1Label),
+            document.createTextNode(' to retry')
+          );
+        }
+      }
+
+      function renderDifficultyMenu() {
+        const song = getActiveSong();
+        const activeDiff = getActiveDifficulty();
+        diffMenu.replaceChildren();
+
+        DIFFICULTY_ORDER.forEach((diffId) => {
+          const diff = DIFFICULTIES[diffId];
+          const supported = song.chillOnly ? diffId === 'CHILL' : true;
+          const unlocked = supported && isDifficultyUnlocked(diffId);
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'diff-option' + (activeDiff.id === diffId ? ' active' : '');
+          btn.disabled = !unlocked;
+
+          const top = document.createElement('div');
+          top.className = 'diff-opt-top tabular-nums';
+
+          const nameSpan = document.createElement('span');
+          const starText = song.stars[diffId] ? ` ${song.stars[diffId]}` : '';
+          nameSpan.textContent = `${diff.name}${starText}${!unlocked ? ' [LOCKED]' : ''}`;
+
+          const multSpan = document.createElement('span');
+          multSpan.className = 'mult-tag';
+          multSpan.textContent = `${diff.mult.toFixed(2)}x`;
+
+          top.append(nameSpan, multSpan);
+
+          const sub = document.createElement('span');
+          sub.className = 'diff-opt-sub';
+          sub.textContent = !supported
+            ? 'Tutorial track is Chill-rated only'
+            : !unlocked
+            ? 'Clear previous tier (or use DEV code) to unlock'
+            : diff.desc;
+
+          btn.append(top, sub);
+          btn.addEventListener('click', () => {
+            if (!unlocked) return;
+            diffPopoverWrap.classList.remove('open');
+            diffPillBtn.setAttribute('aria-expanded', 'false');
+            store.set({ selectedDifficulty: diffId }, { immediate: true });
+            resetRound(game.phase === 'PLAYING', null);
+          });
+          diffMenu.appendChild(btn);
+        });
+      }
+
+      function renderTrackLibrary() {
+        const s = store.get();
+        trackSectionsList.replaceChildren();
+
+        SONG_CATALOG.forEach((song) => {
+          const isCurrentSong = s.selectedSongId === song.id;
+          const card = document.createElement('div');
+          card.className = 'osu-song-card' + (isCurrentSong ? ' active' : '');
+
+          const top = document.createElement('div');
+          top.className = 'osu-song-top tabular-nums';
+          const bestForSong = s.songBestScores[song.id] || 0;
+          top.innerHTML = `<span>TRACK ${song.num} · ${song.bpm} BPM · ${song.keySig}</span><span>BEST: ${bestForSong}</span>`;
+
+          const title = document.createElement('div');
+          title.className = 'osu-song-title';
+          title.textContent = `${song.title} — ${song.artist}`;
+
+          const genre = document.createElement('div');
+          genre.className = 'osu-song-artist tabular-nums';
+          genre.textContent = `${song.genre} · ${formatTimeSec(song.durationSec)}`;
+
+          const desc = document.createElement('div');
+          desc.className = 'osu-song-desc';
+          desc.textContent = song.desc;
+
+          const diffRow = document.createElement('div');
+          diffRow.className = 'osu-diff-pills tabular-nums';
+
+          const availableTiers = song.chillOnly ? ['CHILL'] : DIFFICULTY_ORDER;
+          availableTiers.forEach((diffId) => {
+            const unlocked = isDifficultyUnlocked(diffId);
+            const isSelected = isCurrentSong && getActiveDifficulty().id === diffId;
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'osu-diff-chip' + (isSelected ? ' active' : '');
+            chip.disabled = !unlocked;
+            const star = song.stars[diffId] || '';
+            chip.textContent = unlocked ? `${diffId} ${star}` : `${diffId} 🔒`;
+
+            chip.addEventListener('click', () => {
+              if (!unlocked) return;
+              game.mustChooseTrackAfterTutorial = false;
+              trackGateBanner.classList.remove('visible');
+              store.set({
+                selectedSongId: song.id,
+                selectedDifficulty: diffId
+              }, { immediate: true });
+              closePausePanel(true);
+            });
+
+            diffRow.appendChild(chip);
+          });
+
+          card.append(top, title, genre, desc, diffRow);
+          trackSectionsList.appendChild(card);
+        });
+      }
+
+      function renderModGrid() {
+        const s = store.get();
+        modGrid.replaceChildren();
+        const mult = computeTotalMultiplier();
+        modRackSummary.textContent = `${s.equippedMods.length}/3 EQUIPPED · ${mult.toFixed(2)}x`;
+
+        MOD_CATALOG.forEach((mod) => {
+          const equipped = s.equippedMods.includes(mod.code);
+          const unlocked = s.devUnlocked || s.totalHits >= mod.unlockHits;
+          const atCap = !equipped && s.equippedMods.length >= 3;
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'mod-card' + (equipped ? ' equipped' : '');
+          btn.disabled = !unlocked || atCap;
+
+          const top = document.createElement('div');
+          top.className = 'mod-card-top tabular-nums';
+          top.innerHTML = `<span>[${mod.code}] ${mod.name}</span><span class="mult-tag">${mod.mult.toFixed(2)}x</span>`;
+
+          const desc = document.createElement('div');
+          desc.className = 'mod-card-desc';
+          desc.textContent = mod.desc;
+
+          const meta = document.createElement('div');
+          meta.className = 'mod-meta tabular-nums';
+          meta.innerHTML = `<span>${unlocked ? (equipped ? 'EQUIPPED' : 'AVAILABLE') : `UNLOCK AT ${mod.unlockHits} HITS`}</span><span>${mod.code}</span>`;
+
+          btn.append(top, desc, meta);
+          btn.addEventListener('click', () => {
+            if (!unlocked) return;
+            const cur = store.get().equippedMods;
+            const next = cur.includes(mod.code)
+              ? cur.filter((c) => c !== mod.code)
+              : (cur.length < 3 ? [...cur, mod.code] : cur);
+            store.set({ equippedMods: next }, { immediate: true });
+            if (game.phase === 'IDLE' || game.phase === 'PLAYING') {
+              resetRound(game.phase === 'PLAYING', game.sandboxModeId);
+            }
+          });
+          modGrid.appendChild(btn);
+        });
+      }
+
+      function renderCodexList() {
+        codexContentList.replaceChildren();
+
+        if (activeCodexTab === 'modes') {
+          WAVE_MODES.forEach((m, i) => {
+            const card = document.createElement('div');
+            card.className = 'codex-card';
+
+            const head = document.createElement('div');
+            head.className = 'codex-card-head';
+
+            const title = document.createElement('span');
+            title.className = 'codex-card-title tabular-nums';
+            title.style.color = m.color;
+            title.textContent = `${String(i + 1).padStart(2, '0')} · ${m.name} [${m.tag}]`;
+
+            const testBtn = document.createElement('button');
+            testBtn.type = 'button';
+            testBtn.className = 'btn btn-primary';
+            testBtn.style.padding = '3px 9px';
+            testBtn.style.fontSize = '0.66rem';
+            testBtn.textContent = 'Test Wave';
+            testBtn.addEventListener('click', () => {
+              game.mustChooseTrackAfterTutorial = false;
+              pauseSidePanel.classList.remove('open');
+              modDrawer.classList.remove('open');
+              drawerScrim.classList.remove('open');
+              resetRound(true, m.id);
+            });
+
+            head.append(title, testBtn);
+
+            const desc = document.createElement('div');
+            desc.className = 'codex-card-desc';
+            desc.textContent = m.desc;
+
+            card.append(head, desc);
+            codexContentList.appendChild(card);
+          });
+        } else if (activeCodexTab === 'mods') {
+          MOD_CATALOG.forEach((mod) => {
+            const card = document.createElement('div');
+            card.className = 'codex-card';
+            card.innerHTML = `
+              <div class="codex-card-head tabular-nums">
+                <span class="codex-card-title">[${mod.code}] ${mod.name}</span>
+                <span class="mult-tag">${mod.mult.toFixed(2)}x</span>
+              </div>
+              <div class="codex-card-desc">${mod.desc}</div>
+            `;
+            codexContentList.appendChild(card);
+          });
+        } else {
+          DIFFICULTY_ORDER.forEach((diffId) => {
+            const d = DIFFICULTIES[diffId];
+            const card = document.createElement('div');
+            card.className = 'codex-card';
+            card.innerHTML = `
+              <div class="codex-card-head tabular-nums">
+                <span class="codex-card-title">${d.name} (${isDifficultyUnlocked(diffId) ? 'UNLOCKED' : 'LOCKED'})</span>
+                <span class="mult-tag">${d.mult.toFixed(2)}x</span>
+              </div>
+              <div class="codex-card-desc">${d.desc}</div>
+            `;
+            codexContentList.appendChild(card);
+          });
+        }
+      }
+
+      function syncAllUI(state) {
+        const theme = CHASSIS_THEMES[state.theme] || CHASSIS_THEMES.emerald;
+        document.documentElement.style.setProperty('--theme-primary', theme.primary);
+        document.documentElement.style.setProperty('--theme-bright', theme.bright);
+        document.documentElement.style.setProperty('--theme-dim', theme.dim);
+        document.documentElement.style.setProperty('--theme-on-primary', theme.onPrimary);
+
+        const activeDiff = getActiveDifficulty();
+        const activeSong = getActiveSong();
+        const totalMult = computeTotalMultiplier();
+
+        diffPillText.textContent = activeDiff.name;
+        diffMultBadge.textContent = `${activeDiff.mult.toFixed(2)}x`;
+        modsActiveCount.textContent = `${state.equippedMods.length}/3`;
+        modsNotifDot.classList.toggle('visible', state.equippedMods.length > 0);
+        multLabel.textContent = `${totalMult.toFixed(2)}x MULT`;
+
+        bestDisplay.textContent = String(state.bestScore);
+
+        // Player Stats Pane
+        statAllTimeBest.textContent = String(state.bestScore);
+        statTierBestLabel.textContent = `${activeDiff.name} Best`;
+        statTierBest.textContent = String(state.tierBestScores[activeDiff.id] || 0);
+        statBestStreak.textContent = String(state.bestStreak);
+
+        const cmRatio = state.totalMisses > 0
+          ? (state.totalHits / state.totalMisses).toFixed(2)
+          : state.totalHits.toFixed(2);
+        statCmRatio.textContent = cmRatio;
+        statCmCounts.textContent = `${state.totalHits} Hits · ${state.totalMisses} Misses`;
+
+        const totalAttempts = state.totalHits + state.totalMisses;
+        const accPct = totalAttempts > 0 ? ((state.totalHits / totalAttempts) * 100).toFixed(1) : '100.0';
+        statAccuracyPct.textContent = `${accPct}%`;
+
+        const perfPct = state.totalHits > 0 ? ((state.totalPerfects / state.totalHits) * 100).toFixed(1) : '0.0';
+        statPerfectPct.textContent = `${perfPct}%`;
+        statPerfectCount.textContent = `${state.totalPerfects} Inner-Core Hits`;
+
+        const avgOff = state.totalHits > 0 ? (state.offsetDegSum / state.totalHits).toFixed(1) : '0.0';
+        statAvgOffset.textContent = `${avgOff}°`;
+
+        const totalDirMisses = state.earlyMisses + state.lateMisses;
+        const earlyPct = totalDirMisses > 0 ? Math.round((state.earlyMisses / totalDirMisses) * 100) : 50;
+        const latePct = 100 - earlyPct;
+        statEarlyLabel.textContent = `EARLY MISSES: ${state.earlyMisses} (${earlyPct}%)`;
+        statLateLabel.textContent = `LATE MISSES: ${state.lateMisses} (${latePct}%)`;
+        statBiasFill.style.width = `${earlyPct}%`;
+
+        // Controls & Audio Pane
+        if (game.listeningSlot !== 1) {
+          rebind1Btn.textContent = state.trigger1Label;
+          rebind1Btn.classList.remove('btn-listening');
+        }
+        if (game.listeningSlot !== 2) {
+          rebind2Btn.textContent = state.trigger2Label;
+          rebind2Btn.classList.remove('btn-listening');
+        }
+
+        togglePointerBtn.setAttribute('aria-pressed', String(state.allowPointerTap));
+        togglePointerBtn.textContent = state.allowPointerTap ? 'ON' : 'OFF';
+
+        toggleMusicBtn.setAttribute('aria-pressed', String(state.musicEnabled));
+        toggleMusicBtn.textContent = state.musicEnabled ? 'ON' : 'OFF';
+        activeTrackTitle.textContent = `${activeSong.num} · ${activeSong.title} (${activeSong.artist})`;
+        musicVolSlider.value = String(state.musicVolume);
+        musicVolLabel.textContent = `${state.musicVolume}%`;
+
+        toggleSoundBtn.setAttribute('aria-pressed', String(state.soundEnabled));
+        toggleSoundBtn.textContent = state.soundEnabled ? 'ON' : 'OFF';
+        sfxVolSlider.value = String(state.sfxVolume);
+        sfxVolLabel.textContent = `${state.sfxVolume}%`;
+
+        const sfxMode = state.hitSfxMode || 'switch';
+        sfxModeSwitchBtn.classList.toggle('active', sfxMode === 'switch');
+        sfxModeRimBtn.classList.toggle('active', sfxMode === 'rimshot');
+        sfxModeHarmonicBtn.classList.toggle('active', sfxMode === 'harmonic');
+
+        activeHitSfxLabel.textContent =
+          sfxMode === 'harmonic' ? `Song Key (${activeSong.keySig})` :
+          sfxMode === 'rimshot' ? 'Soft Rimshot' :
+          `Tactile Switch + ${activeSong.keySig}`;
+
+        themeOptionBtns.forEach((btn) => {
+          btn.setAttribute('aria-checked', String(btn.dataset.theme === state.theme));
+        });
+
+        // Developer Status
+        if (state.devUnlocked) {
+          devStatusTag.textContent = 'DEV UNLOCKED';
+          devStatusTag.style.color = '#34d399';
+        } else {
+          devStatusTag.textContent = 'LOCKED';
+          devStatusTag.style.color = 'var(--text-muted)';
+        }
+
+        trackGateBanner.classList.toggle('visible', game.mustChooseTrackAfterTutorial);
+        resumeGameBtn.textContent = game.mustChooseTrackAfterTutorial ? 'Pick Track' : 'Resume';
+
+        renderDifficultyMenu();
+        renderTrackLibrary();
+        renderModGrid();
+        renderCodexList();
+        updateSongHudUI();
+        updatePromptUI();
+      }
+
+      const store = createStore(INITIAL_STATE, syncAllUI);
+
+      /* =========================================================================
+       * 7. PAUSE SIDE PANEL, MOD DRAWER & DEV UNLOCK HANDLERS
+       * ========================================================================= */
+      const PAUSE_TAB_TITLES = {
+        main: 'Player Stats',
+        tracks: 'Beatmap Tracks',
+        ctrl: 'Controls & Guide',
+        audio: 'Audio & SFX',
+        disp: 'Settings & Dev',
+        index: 'Field Index'
+      };
+
+      function switchPauseTab(tabId) {
+        activePauseTab = PAUSE_TAB_TITLES[tabId] ? tabId : 'main';
+        pausePanelHeading.textContent = PAUSE_TAB_TITLES[activePauseTab];
+
+        railTabBtns.forEach((btn) => {
+          const active = btn.dataset.ptab === activePauseTab;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-selected', String(active));
+        });
+
+        Object.entries(pausePanes).forEach(([key, pane]) => {
+          pane.classList.toggle('active', key === activePauseTab);
+        });
+      }
+
+      function openPausePanel(initialTab = 'main') {
+        diffPopoverWrap.classList.remove('open');
+        diffPillBtn.setAttribute('aria-expanded', 'false');
+        modDrawer.classList.remove('open');
+
+        if (!pauseSidePanel.classList.contains('open')) {
+          phaseBeforeDrawer = game.phase;
+          if (game.phase === 'PLAYING') {
+            game.phase = 'PAUSED';
+            stopMusicPlayback();
+          }
+        }
+
+        pauseKicker.textContent = game.mustChooseTrackAfterTutorial ? 'CHOOSE A TRACK' : 'GAME PAUSED';
+        switchPauseTab(initialTab);
+        syncAllUI(store.get());
+        drawerScrim.classList.add('open');
+        pauseSidePanel.classList.add('open');
+      }
+
+      function closePausePanel(startSelectedSong = false) {
+        if (game.mustChooseTrackAfterTutorial && !startSelectedSong) {
+          switchPauseTab('tracks');
+          trackGateBanner.classList.add('visible');
+          return;
+        }
+
+        game.listeningSlot = 0;
+        game.confirmResetCareer = false;
+        resetBestBtn.textContent = 'Reset Career Stats';
+        pauseSidePanel.classList.remove('open');
+        drawerScrim.classList.remove('open');
+
+        if (startSelectedSong) {
+          resetRound(true, null);
+        } else if (phaseBeforeDrawer === 'PLAYING') {
+          game.phase = 'PLAYING';
+          startSongAudioAtOffset(getActiveSong().id, game.songTime, Boolean(game.sandboxModeId));
+          updatePromptUI();
+        }
+        syncAllUI(store.get());
+      }
+
+      function openModDrawer() {
+        diffPopoverWrap.classList.remove('open');
+        diffPillBtn.setAttribute('aria-expanded', 'false');
+        pauseSidePanel.classList.remove('open');
+
+        if (!modDrawer.classList.contains('open')) {
+          phaseBeforeDrawer = game.phase;
+          if (game.phase === 'PLAYING') {
+            game.phase = 'PAUSED';
+            stopMusicPlayback();
+          }
+        }
+        syncAllUI(store.get());
+        drawerScrim.classList.add('open');
+        modDrawer.classList.add('open');
+      }
+
+      function closeModDrawer() {
+        modDrawer.classList.remove('open');
+        drawerScrim.classList.remove('open');
+        if (phaseBeforeDrawer === 'PLAYING') {
+          game.phase = 'PLAYING';
+          startSongAudioAtOffset(getActiveSong().id, game.songTime, Boolean(game.sandboxModeId));
+          updatePromptUI();
+        }
+      }
+
+      diffPillBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = diffPopoverWrap.classList.toggle('open');
+        diffPillBtn.setAttribute('aria-expanded', String(isOpen));
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!diffPopoverWrap.contains(e.target)) {
+          diffPopoverWrap.classList.remove('open');
+          diffPillBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      headerSongChip.addEventListener('click', () => openPausePanel('tracks'));
+      openPauseBtn.addEventListener('click', () => openPausePanel('main'));
+      resumeGameBtn.addEventListener('click', () => closePausePanel(false));
+
+      openDevQuickBtn.addEventListener('click', () => {
+        switchPauseTab('disp');
+        setTimeout(() => devCodeInput.focus(), 60);
+      });
+
+      drawerScrim.addEventListener('click', () => {
+        if (modDrawer.classList.contains('open')) closeModDrawer();
+        else if (pauseSidePanel.classList.contains('open')) closePausePanel(false);
+      });
+
+      railTabBtns.forEach((btn) => {
+        btn.addEventListener('click', () => switchPauseTab(btn.dataset.ptab));
+      });
+
+      jumpToTracksBtn.addEventListener('click', () => switchPauseTab('tracks'));
+      jumpToIndexBtn.addEventListener('click', () => switchPauseTab('index'));
+
+      openModsBtn.addEventListener('click', openModDrawer);
+      closeModsBtn.addEventListener('click', closeModDrawer);
+      clearModsBtn.addEventListener('click', () => {
+        store.set({ equippedMods: [] }, { immediate: true });
+        if (game.phase === 'IDLE' || game.phase === 'PLAYING') {
+          resetRound(game.phase === 'PLAYING', game.sandboxModeId);
+        }
+      });
+
+      // Developer Passcode Handler: RainbowBrite38@*
+      function submitDevCode() {
+        const entered = (devCodeInput.value || '').trim();
+        if (entered === DEV_PASSCODE) {
+          devCodeInput.value = '';
+          store.set({
+            devUnlocked: true,
+            unlockedDiffs: [...DIFFICULTY_ORDER],
+            tutorialTourDone: true,
+            tutorialSongCompleted: true
+          }, { immediate: true });
+          game.mustChooseTrackAfterTutorial = false;
+          playLevelClearSfx();
+          syncAllUI(store.get());
+        } else {
+          devStatusTag.textContent = 'INVALID CODE';
+          devStatusTag.style.color = '#ef4444';
+          playMissSfx();
+        }
+      }
+
+      devUnlockSubmitBtn.addEventListener('click', submitDevCode);
+      devCodeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitDevCode();
+        }
+      });
+
+      // Controls & Audio Event Listeners
+      rebind1Btn.addEventListener('click', () => {
+        game.listeningSlot = 1;
+        rebind1Btn.textContent = 'PRESS KEY...';
+        rebind1Btn.classList.add('btn-listening');
+      });
+
+      rebind2Btn.addEventListener('click', () => {
+        game.listeningSlot = 2;
+        rebind2Btn.textContent = 'PRESS KEY...';
+        rebind2Btn.classList.add('btn-listening');
+      });
+
+      togglePointerBtn.addEventListener('click', () => {
+        store.set((s) => ({ allowPointerTap: !s.allowPointerTap }), { immediate: true });
+      });
+
+      replayTutorialBtn.addEventListener('click', () => {
+        game.mustChooseTrackAfterTutorial = false;
+        pauseSidePanel.classList.remove('open');
+        drawerScrim.classList.remove('open');
+        store.set({
+          tutorialTourDone: false,
+          tutorialSongCompleted: false,
+          selectedSongId: 'moments_passing',
+          selectedDifficulty: 'CHILL'
+        }, { immediate: true });
+        resetRound(false, null);
+      });
+
+      toggleMusicBtn.addEventListener('click', () => {
+        const next = !store.get().musicEnabled;
+        store.set({ musicEnabled: next }, { immediate: true });
+        updateAudioGains();
+        if (!next) stopMusicPlayback();
+      });
+
+      musicVolSlider.addEventListener('input', (e) => {
+        store.set({ musicVolume: Number(e.target.value) });
+        updateAudioGains();
+      });
+
+      toggleSoundBtn.addEventListener('click', () => {
+        const next = !store.get().soundEnabled;
+        store.set({ soundEnabled: next }, { immediate: true });
+        updateAudioGains();
+        if (next) playHitSfx(1, true);
+      });
+
+      sfxVolSlider.addEventListener('input', (e) => {
+        store.set({ sfxVolume: Number(e.target.value) });
+        updateAudioGains();
+      });
+
+      sfxModeSwitchBtn.addEventListener('click', () => {
+        store.set({ hitSfxMode: 'switch', soundEnabled: true }, { immediate: true });
+        playHitSfx(1, true);
+      });
+
+      sfxModeRimBtn.addEventListener('click', () => {
+        store.set({ hitSfxMode: 'rimshot', soundEnabled: true }, { immediate: true });
+        playHitSfx(1, true);
+      });
+
+      sfxModeHarmonicBtn.addEventListener('click', () => {
+        store.set({ hitSfxMode: 'harmonic', soundEnabled: true }, { immediate: true });
+        playHitSfx(1, true);
+      });
+
+      themeOptionBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (CHASSIS_THEMES[btn.dataset.theme]) {
+            store.set({ theme: btn.dataset.theme }, { immediate: true });
+            playHitSfx(2, false);
+          }
+        });
+      });
+
+      resetBestBtn.addEventListener('click', () => {
+        if (!game.confirmResetCareer) {
+          game.confirmResetCareer = true;
+          resetBestBtn.textContent = 'Click Again to Confirm';
+          return;
+        }
+        game.confirmResetCareer = false;
+        resetBestBtn.textContent = 'Reset Career Stats';
+        store.resetCareer();
+      });
+
+      resetDefaultsBtn.addEventListener('click', () => {
+        game.confirmResetCareer = false;
+        resetBestBtn.textContent = 'Reset Career Stats';
+        store.resetSettings();
+        updateAudioGains();
+      });
+
+      codexTabModes.addEventListener('click', () => {
+        activeCodexTab = 'modes';
+        codexTabModes.classList.add('active');
+        codexTabMods.classList.remove('active');
+        codexTabDiffs.classList.remove('active');
+        renderCodexList();
+      });
+
+      codexTabMods.addEventListener('click', () => {
+        activeCodexTab = 'mods';
+        codexTabMods.classList.add('active');
+        codexTabModes.classList.remove('active');
+        codexTabDiffs.classList.remove('active');
+        renderCodexList();
+      });
+
+      codexTabDiffs.addEventListener('click', () => {
+        activeCodexTab = 'diffs';
+        codexTabDiffs.classList.add('active');
+        codexTabModes.classList.remove('active');
+        codexTabMods.classList.remove('active');
+        renderCodexList();
+      });
+
+      function formatKeyLabel(e) {
+        if (e.code === 'Space') return 'SPACE';
+        if (e.code.startsWith('Key')) return `KEY ${e.code.slice(3).toUpperCase()}`;
+        if (e.code.startsWith('Digit')) return e.code.slice(5);
+        if (e.code.startsWith('Arrow')) return e.code.slice(5).toUpperCase();
+        return e.code.toUpperCase();
+      }
+
+      window.addEventListener('keydown', (e) => {
+        if (e.repeat) return;
+
+        if (game.listeningSlot > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.code !== 'Escape') {
+            const label = formatKeyLabel(e);
+            if (game.listeningSlot === 1) {
+              store.set({ trigger1Code: e.code, trigger1Label: label }, { immediate: true });
+            } else {
+              store.set({ trigger2Code: e.code, trigger2Label: label }, { immediate: true });
+            }
+            playHitSfx(1, true);
+          }
+          game.listeningSlot = 0;
+          syncAllUI(store.get());
+          return;
+        }
+
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          if (modDrawer.classList.contains('open')) {
+            closeModDrawer();
+          } else if (pauseSidePanel.classList.contains('open')) {
+            closePausePanel(false);
+          } else {
+            openPausePanel('main');
+          }
+          return;
+        }
+
+        if (isAnyOverlayOpen()) return;
+
+        const s = store.get();
+        if (e.code === s.trigger1Code || e.code === s.trigger2Code) {
+          e.preventDefault();
+          handleTriggerAction();
+        }
+      });
+
+      canvas.addEventListener('pointerdown', (e) => {
+        if (!store.get().allowPointerTap) return;
+        if (isAnyOverlayOpen()) return;
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        e.preventDefault();
+        handleTriggerAction();
+      });
+
+      /* =========================================================================
+       * 8. HIGH-DPI CANVAS DIAL RENDERER (WITH TUTORIAL SPIN-FADE CINEMATIC)
+       * ========================================================================= */
+      let canvasSize = { width: 320, height: 320 };
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        canvasSize = { width: rect.width, height: rect.height };
+      }
+
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => resizeCanvas());
+        ro.observe(canvasWrap);
+      }
+      window.addEventListener('resize', resizeCanvas);
+
+      function render() {
+        const { width, height } = canvasSize;
+        const cx = width / 2 + game.shakeX;
+        const cy = height / 2;
+        const maxR = Math.min(width / 2, height / 2);
+
+        const theme = CHASSIS_THEMES[store.get().theme] || CHASSIS_THEMES.emerald;
+        const isIlluminated = (game.phase === 'PLAYING' || game.phase === 'TUTORIAL') && isNeedleOverAnyTarget();
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, game.dialVisualAlpha));
+
+        const beatExpand = audioDeck.beatPulse * 2.5;
+        const bezelOuterR = maxR * 0.89 + beatExpand;
+        const trackRadius = maxR * 0.71;
+        const trackWidth = Math.max(22, maxR * 0.14);
+        const innerRadius = trackRadius - trackWidth / 2;
+        const outerRadius = trackRadius + trackWidth / 2;
+
+        // 60-Tick Perimeter Scale
+        for (let i = 0; i < 60; i++) {
+          const angle = (i * TAU) / 60;
+          const isMajor = i % 5 === 0;
+          const rStart = bezelOuterR + 2;
+          const rEnd = bezelOuterR + (isMajor ? 9 : 4);
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(angle) * rStart, cy + Math.sin(angle) * rStart);
+          ctx.lineTo(cx + Math.cos(angle) * rEnd, cy + Math.sin(angle) * rEnd);
+          ctx.strokeStyle = isMajor ? '#374052' : '#1b202b';
+          ctx.lineWidth = isMajor ? 1.5 : 1;
+          ctx.stroke();
+        }
+
+        // Machined Outer Bezel
+        const bezelGrad = ctx.createLinearGradient(cx - bezelOuterR, cy - bezelOuterR, cx + bezelOuterR, cy + bezelOuterR);
+        bezelGrad.addColorStop(0, '#1a1f29');
+        bezelGrad.addColorStop(0.5, '#10131a');
+        bezelGrad.addColorStop(1, '#07080c');
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, bezelOuterR, 0, TAU);
+        ctx.fillStyle = bezelGrad;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, bezelOuterR, 0, TAU);
+        ctx.strokeStyle = isIlluminated ? theme.bright : '#242936';
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+
+        // Recessed Calibration Track
+        ctx.beginPath();
+        ctx.arc(cx, cy, trackRadius, 0, TAU);
+        ctx.strokeStyle = '#0c0f15';
+        ctx.lineWidth = trackWidth;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerRadius, 0, TAU);
+        ctx.strokeStyle = '#1f2430';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, innerRadius, 0, TAU);
+        ctx.strokeStyle = '#1f2430';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Stepped Velocity Trail Behind Striker Needle
+        if (game.phase === 'PLAYING' || game.phase === 'TUTORIAL' || game.phase === 'TUTORIAL_CINEMATIC') {
+          const speedRatio = Math.min(1, Math.max(0, (game.angularSpeed - 1.2) / 6.2));
+          const trailSpan = 0.18 + speedRatio * 0.52;
+          const steps = theme.trailSteps.length;
+          const stepSpan = trailSpan / steps;
+
+          for (let s = 0; s < steps; s++) {
+            const bandEnd = game.spinnerAngle - game.direction * ((steps - 1 - s) * stepSpan);
+            const bandStart = bandEnd - game.direction * stepSpan;
+            ctx.beginPath();
+            ctx.arc(cx, cy, trackRadius, bandStart, bandEnd, game.direction === -1);
+            ctx.strokeStyle = theme.trailSteps[s];
+            ctx.lineWidth = trackWidth - 4;
+            ctx.lineCap = 'butt';
+            ctx.stroke();
+          }
+        }
+
+        // Portal Nodes (if OSU_PORTAL active)
+        if (game.portal) {
+          [game.portal.entryAngle, game.portal.exitAngle].forEach((pAngle, idx) => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, trackRadius, pAngle - game.portal.halfWidth, pAngle + game.portal.halfWidth);
+            ctx.strokeStyle = idx === 0 ? '#e879f9' : '#06b6d4';
+            ctx.lineWidth = trackWidth - 2;
+            ctx.stroke();
+          });
+        }
+
+        // Hazard Mines (if HAZARD_DECOY active)
+        for (let i = 0; i < game.hazards.length; i++) {
+          const h = game.hazards[i];
+          ctx.beginPath();
+          ctx.arc(cx, cy, trackRadius, h.angle - h.halfWidth, h.angle + h.halfWidth);
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = trackWidth - 2;
+          ctx.stroke();
+        }
+
+        // Target Sectors
+        for (let i = 0; i < game.targets.length; i++) {
+          const t = game.targets[i];
+          const tStart = t.angle - t.halfWidth;
+          const tEnd = t.angle + t.halfWidth;
+          const overThis = Math.abs(signedAngleDiff(game.spinnerAngle, t.angle)) <= (t.halfWidth + NEEDLE_TOLERANCE);
+
+          let fillCol = theme.primary;
+          if (game.phase === 'GAMEOVER') {
+            fillCol = '#2e1216';
+          } else if (game.waveModeId === 'CCW_RED') {
+            fillCol = overThis ? '#fca5a5' : '#ef4444';
+          } else if (game.waveModeId === 'PURPLE_SURGE') {
+            fillCol = overThis ? '#d8b4fe' : '#a855f7';
+          } else if (game.waveModeId === 'DOUBLE_TAP' && t.tapsLeft === 2) {
+            fillCol = overThis ? '#7dd3fc' : '#0284c7';
+          } else if (overThis) {
+            fillCol = theme.bright;
+          }
+
+          ctx.save();
+          ctx.globalAlpha = game.dialVisualAlpha * (t.alpha !== undefined ? t.alpha : 1);
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, trackRadius, tStart, tEnd);
+          ctx.strokeStyle = fillCol;
+          ctx.lineWidth = trackWidth - 2;
+          ctx.lineCap = 'butt';
+          ctx.stroke();
+
+          // Inner 24% Bullseye Core
+          if (game.phase !== 'GAMEOVER') {
+            const bullseyeHalf = t.halfWidth * 0.24;
+            ctx.beginPath();
+            ctx.arc(cx, cy, trackRadius, t.angle - bullseyeHalf, t.angle + bullseyeHalf);
+            ctx.strokeStyle = overThis ? '#ffffff' : theme.edgeTick;
+            ctx.lineWidth = trackWidth - 2;
+            ctx.stroke();
+          }
+
+          // Sequence Number Label (for ORDERED_SEQ)
+          if (t.seqNum > 0) {
+            const tx = cx + Math.cos(t.angle) * trackRadius;
+            const ty = cy + Math.sin(t.angle) * trackRadius;
+            ctx.fillStyle = '#000000';
+            ctx.font = '800 12px ui-monospace, SFMono-Regular, Menlo, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(t.seqNum), tx, ty);
+          }
+
+          ctx.restore();
+        }
+
+        // Red Miss Error Arc
+        if (game.phase === 'GAMEOVER' && Math.abs(game.missSignedSpan) > 0.001) {
+          const ccw = game.missSignedSpan < 0;
+          ctx.beginPath();
+          ctx.arc(cx, cy, trackRadius, game.missNearestEdge, game.missNearestEdge + game.missSignedSpan, ccw);
+          ctx.strokeStyle = '#7f1d1d';
+          ctx.lineWidth = trackWidth - 4;
+          ctx.stroke();
+        }
+
+        // Hit Shockwaves & Sparks
+        for (let i = 0; i < game.hitEffects.length; i++) {
+          const fx = game.hitEffects[i];
+          const progress = 1 - fx.timer / fx.duration;
+          const waveRadius = bezelOuterR + 2 + progress * 18;
+          ctx.beginPath();
+          ctx.arc(cx, cy, waveRadius, 0, TAU);
+          ctx.strokeStyle = fx.isPerfect ? '#ffffff' : theme.bright;
+          ctx.lineWidth = Math.max(1, 2.2 * (1 - progress));
+          ctx.stroke();
+        }
+
+        // Center Hub Cap
+        const hubRadius = innerRadius * 0.52;
+        const hubActive = isIlluminated || game.hubStatusTimer > 0;
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, hubRadius, 0, TAU);
+        ctx.fillStyle = game.phase === 'GAMEOVER' ? '#1f0b0e' : (hubActive ? theme.hubActiveFill : '#090b10');
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, hubRadius, 0, TAU);
+        ctx.strokeStyle = game.phase === 'GAMEOVER' ? '#ef4444' : (hubActive ? theme.bright : '#242936');
+        ctx.lineWidth = hubActive ? 1.5 : 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        if (game.phase === 'GAMEOVER') {
+          ctx.fillStyle = '#ef4444';
+          ctx.font = '800 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.fillText('MISS', cx, cy - 7);
+          ctx.fillStyle = '#fca5a5';
+          ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.fillText(`${game.missDegrees}°`, cx, cy + 8);
+        } else if (game.hubStatusTimer > 0) {
+          ctx.fillStyle = game.hubStatusColor || theme.bright;
+          ctx.font = '800 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.fillText(game.hubStatusText, cx, cy);
+        } else {
+          ctx.fillStyle = isIlluminated ? theme.bright : '#9ca3af';
+          ctx.font = '800 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+          let centerText = 'READY';
+          if (game.phase === 'PLAYING' || game.phase === 'TUTORIAL') {
+            centerText = game.direction === 1 ? 'CW ↻' : 'CCW ↺';
+          } else if (game.phase === 'PAUSED') {
+            centerText = 'PAUSED';
+          } else if (game.phase === 'LEVEL_CLEAR') {
+            centerText = 'CLEAR';
+          }
+          ctx.fillText(centerText, cx, cy);
+        }
+
+        // Striker Needle & Pointer Tip
+        const sa = game.spinnerAngle;
+        const cosA = Math.cos(sa);
+        const sinA = Math.sin(sa);
+
+        ctx.beginPath();
+        ctx.moveTo(cx + cosA * hubRadius, cy + sinA * hubRadius);
+        ctx.lineTo(cx + cosA * (innerRadius - 1), cy + sinA * (innerRadius - 1));
+        ctx.strokeStyle = game.phase === 'GAMEOVER' ? '#ef4444' : '#374052';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const needleColor = game.phase === 'GAMEOVER' ? '#ef4444' : '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(cx + cosA * (innerRadius - 5), cy + sinA * (innerRadius - 5));
+        ctx.lineTo(cx + cosA * (outerRadius + 5), cy + sinA * (outerRadius + 5));
+        ctx.strokeStyle = needleColor;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        const tipBaseR = outerRadius + 8;
+        const tipPeakR = outerRadius + 14;
+        const perpX = -sinA * 4;
+        const perpY = cosA * 4;
+
+        ctx.beginPath();
+        ctx.moveTo(cx + cosA * tipPeakR, cy + sinA * tipPeakR);
+        ctx.lineTo(cx + cosA * tipBaseR + perpX, cy + sinA * tipBaseR + perpY);
+        ctx.lineTo(cx + cosA * tipBaseR - perpX, cy + sinA * tipBaseR - perpY);
+        ctx.closePath();
+        ctx.fillStyle = needleColor;
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      /* =========================================================================
+       * 9. FIXED-TIMESTEP UPDATE LOOP
+       * ========================================================================= */
+      let lastTime = performance.now();
+      let lastHudUpdateSec = -1;
+
+      function update(dt, nowSec) {
+        updateBeatTelemetry(nowSec, dt);
+
+        for (let i = game.hitEffects.length - 1; i >= 0; i--) {
+          game.hitEffects[i].timer -= dt;
+          if (game.hitEffects[i].timer <= 0) game.hitEffects.splice(i, 1);
+        }
+
+        if (game.hubStatusTimer > 0) {
+          game.hubStatusTimer = Math.max(0, game.hubStatusTimer - dt);
+        }
+
+        if (game.shakeTime > 0) {
+          game.shakeTime = Math.max(0, game.shakeTime - dt);
+          const p = 1 - game.shakeTime / 0.34;
+          game.shakeX = Math.sin(p * Math.PI * 10) * game.shakeAmplitude * Math.pow(1 - p, 2);
+          if (game.shakeTime === 0) game.shakeX = 0;
+        }
+
+        // Post-Tutorial Cinematic Sequence:
+        // 0.0s -> 0.85s: Center circle spins fast & fades away
+        // 0.70s -> 2.15s: TUTORIAL COMPLETE stripe appears across screen
+        // 2.00s -> 2.65s: Stripe fades out & center circle fades back in
+        // 2.75s: Pause Menu auto-opens to Tracks tab instructing player to choose a track!
+        if (game.phase === 'TUTORIAL_CINEMATIC') {
+          game.cinematicTimer += dt;
+          const t = game.cinematicTimer;
+
+          if (t < 0.85) {
+            const p = t / 0.85;
+            game.dialSpinBoost = 12 * p;
+            game.dialVisualAlpha = Math.max(0, 1 - p);
+          } else if (t < 2.0) {
+            game.dialVisualAlpha = 0;
+          } else if (t < 2.65) {
+            const p = (t - 2.0) / 0.65;
+            game.dialSpinBoost = 6 * (1 - p);
+            game.dialVisualAlpha = Math.min(1, p);
+          } else {
+            game.dialSpinBoost = 0;
+            game.dialVisualAlpha = 1;
+          }
+
+          if (t >= 0.65 && t < 2.15) {
+            tutorialCompleteStripe.classList.add('active');
+          } else {
+            tutorialCompleteStripe.classList.remove('active');
+          }
+
+          game.spinnerAngle = wrapAngle(game.spinnerAngle + (game.angularSpeed + game.dialSpinBoost) * dt);
+
+          if (t >= 2.75) {
+            tutorialCompleteStripe.classList.remove('active');
+            game.dialVisualAlpha = 1;
+            game.dialSpinBoost = 0;
+            resetRound(false, null);
+            openPausePanel('tracks');
+          }
+          return;
+        }
+
+        if (game.phase === 'TUTORIAL') {
+          const step = TUTORIAL_STEPS[game.tutorialStep];
+          if (step && step.type === 'PLAY') {
+            game.spinnerAngle = wrapAngle(game.spinnerAngle + game.direction * 1.65 * dt);
+          }
+          return;
+        }
+
+        if (game.phase !== 'PLAYING') return;
+
+        // Advance song timer synced with audio clock
+        const song = getActiveSong();
+        const audioElapsed = getSyncedSongElapsed();
+        if (audioElapsed !== null && !game.sandboxModeId) {
+          game.songTime = Math.max(game.songTime, audioElapsed);
+        } else {
+          game.songTime += dt * (hasMod('DT') ? 1.25 : 1.0);
+        }
+
+        if (Math.floor(game.songTime * 4) !== lastHudUpdateSec) {
+          lastHudUpdateSec = Math.floor(game.songTime * 4);
+          updateSongHudUI();
+        }
+
+        if (!game.sandboxModeId && game.songTime >= song.durationSec) {
+          handleLevelCleared();
+          return;
+        }
+
+        game.waveElapsed += dt;
+
+        // Dynamic wave physics (Brake Drift, Spring Bounce, Decay Arc, Ghost Pulse)
+        if (game.waveModeId === 'BRAKE_DRIFT') {
+          const mod = 0.55 + 0.65 * Math.abs(Math.sin(game.waveElapsed * 3.4));
+          game.angularSpeed = game.baseAngularSpeed * mod;
+        } else {
+          game.angularSpeed = game.baseAngularSpeed;
+        }
+
+        for (let i = 0; i < game.targets.length; i++) {
+          const t = game.targets[i];
+          if (game.waveModeId === 'SPRING_BOUNCE') {
+            t.angle = wrapAngle(t.baseAngle + Math.sin(game.waveElapsed * 2.8) * 0.42);
+          }
+          if (game.waveModeId === 'DECAY_ARC') {
+            t.halfWidth = Math.max(0.11, t.initialHalfWidth - game.waveElapsed * 0.085);
+          }
+          if (game.waveModeId === 'GHOST_PULSE' || hasMod('HD')) {
+            const dist = Math.abs(signedAngleDiff(game.spinnerAngle, t.angle));
+            t.alpha = dist < 0.95 ? Math.max(0.12, (dist / 0.95) * 0.75) : 1.0;
+          }
+        }
+
+        game.spinnerAngle = wrapAngle(game.spinnerAngle + game.direction * game.angularSpeed * dt);
+
+        // Portal Warp handling
+        if (game.portal && !game.portal.warped) {
+          if (Math.abs(signedAngleDiff(game.spinnerAngle, game.portal.entryAngle)) <= game.portal.halfWidth) {
+            game.portal.warped = true;
+            game.spinnerAngle = game.portal.exitAngle;
+            spawnHitEffect(game.portal.exitAngle, false);
+          }
+        }
+
+        // Strict One-Pass check (ONE_PASS mode or Sudden Death mod)
+        if ((game.waveModeId === 'ONE_PASS' || hasMod('SD')) && game.targets.length > 0) {
+          const primary = game.targets[0];
+          const overNow = Math.abs(signedAngleDiff(game.spinnerAngle, primary.angle)) <= (primary.halfWidth + NEEDLE_TOLERANCE);
+          if (overNow) {
+            game.passedTargetOnce = true;
+          } else if (game.passedTargetOnce) {
+            triggerMiss('OVERSHOT ONE-PASS', primary);
+          }
+        }
+      }
+
+      function frame(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+        update(dt, now / 1000);
+        render();
+        requestAnimationFrame(frame);
+      }
+
+      /* =========================================================================
+       * 10. INITIALIZATION & PRE-RENDER WARMUP
+       * ========================================================================= */
+      setTimeout(() => {
+        renderSongBuffer(getActiveSong()).catch(() => {});
+      }, 60);
+
+      resizeCanvas();
+      syncAllUI(store.get());
+      resetRound(false, null);
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

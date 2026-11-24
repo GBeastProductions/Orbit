@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+:root {
+  --bg-canvas: #050608;
+  --bg-surface: #0c0e12;
+  --bg-elevated: #141820;
+  --bg-input: #07080b;
+
+  --border-subtle: #222733;
+  --border-strong: #374052;
+
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+
+  --theme-primary: #10b981;
+  --theme-bright: #34d399;
+  --theme-dim: #08261c;
+  --theme-on-primary: #000000;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Trebuchet MS", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* Custom slim hardware scrollbars inside drawers */
+.orbit-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.orbit-scroll::-webkit-scrollbar-track {
+  background: #08090c;
+}
+
+.orbit-scroll::-webkit-scrollbar-thumb {
+  background: #283040;
+  border-radius: 3px;
+}
+
+.orbit-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

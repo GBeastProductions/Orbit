@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Coins } from 'lucide-react';
+import { Coins, Shield } from 'lucide-react';
 import { CHASSIS_THEMES, NEEDLE_TOLERANCE, WAVE_MODES } from '../data/catalog';
 import { signedAngleDiff, TAU } from '../engine/beatmap';
+import { RadialHudGauge } from './OrbitVectorAssets';
 import {
   BgFxMode,
   GamePhase,
@@ -11,6 +12,7 @@ import {
   HitErrorTick,
   PortalPair,
   SongSection,
+  SongSectionCue,
   TargetSector,
   ThemeId,
   TutorialLesson,
@@ -38,7 +40,11 @@ export interface CanvasRenderState {
   missReasonText?: string;
   dialVisualAlpha: number;
   bassEnergy: number;
+  spectrumBins: Float32Array;
   beatPulse: number;
+  streak: number;
+  songProgressRatio: number;
+  songSections: SongSectionCue[];
   songSection: SongSection;
   lessonSlowActive: boolean;
   activeLesson: TutorialLesson | null;
@@ -46,13 +52,12 @@ export interface CanvasRenderState {
 
 interface OrbitStageProps {
   renderStateRef: React.MutableRefObject<CanvasRenderState>;
+  phase: GamePhase;
   themeId: ThemeId;
   bgFxMode: BgFxMode;
   allowPointerTap: boolean;
   onTriggerTap: () => void;
-  songHudTitle: string;
   songTimerText: string;
-  songProgressPct: number;
   score: number;
   streak: number;
   bestScore: number;
@@ -67,18 +72,32 @@ interface OrbitStageProps {
   activeLesson: TutorialLesson | null;
   showTutorialCompleteStripe: boolean;
   promptHint: string;
+  trigger1Code: string;
+  trigger1Label: string;
+  trigger2Code: string;
+  trigger2Label: string;
   onSkipTutorial: () => void;
+}
+
+function getComboTierMeta(streak: number): {
+  tier: 0 | 1 | 2 | 3;
+  label: string;
+  accentClass: string;
+} {
+  if (streak >= 100) return { tier: 3, label: 'APEX 100+', accentClass: 'text-white' };
+  if (streak >= 50) return { tier: 2, label: 'HARMONIC 50+', accentClass: 'text-[#fbbf24]' };
+  if (streak >= 25) return { tier: 1, label: 'OVERDRIVE 25+', accentClass: 'text-[var(--accent-bright)]' };
+  return { tier: 0, label: 'COMBO', accentClass: 'text-[#d1d5db]' };
 }
 
 export const OrbitStage: React.FC<OrbitStageProps> = ({
   renderStateRef,
+  phase,
   themeId,
   bgFxMode,
   allowPointerTap,
   onTriggerTap,
-  songHudTitle,
   songTimerText,
-  songProgressPct,
   score,
   streak,
   bestScore,
@@ -93,11 +112,36 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
   activeLesson,
   showTutorialCompleteStripe,
   promptHint,
+  trigger1Code,
+  trigger1Label,
+  trigger2Code,
+  trigger2Label,
   onSkipTutorial,
 }) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef({ width: 520, height: 420 });
+  const [pressedKey, setPressedKey] = useState<'k1' | 'k2' | null>(null);
+
+  const comboTier = getComboTierMeta(streak);
+
+  // Track live mechanical key actuation for footer keycaps
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.code === trigger1Code) setPressedKey('k1');
+      else if (e.code === trigger2Code) setPressedKey('k2');
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code === trigger1Code || e.code === trigger2Code) setPressedKey(null);
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [trigger1Code, trigger2Code]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,36 +168,25 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
     const drawFrame = () => {
       const st = renderStateRef.current;
       const { width, height } = sizeRef.current;
-      const meterReserve = 24;
       const cx = width / 2 + st.shakeX;
-      const cy = (height - meterReserve) / 2;
-      const maxR = Math.min(width / 2, (height - meterReserve) / 2) * 0.94;
+      const cy = height / 2;
+      const maxR = Math.min(width / 2, height / 2) * 0.92;
       const theme = CHASSIS_THEMES[themeId] || CHASSIS_THEMES.emerald;
 
       ctx.clearRect(0, 0, width, height);
 
+      const streakTier = st.streak >= 100 ? 3 : st.streak >= 50 ? 2 : st.streak >= 25 ? 1 : 0;
+
+      // Subtle architectural radar rings when dynamic FX active
       if (bgFxMode === 'dynamic') {
         const energy = st.bassEnergy;
         const isDrop = st.songSection === 'DROP';
-        const ringCount = 3;
-
-        for (let rIdx = 0; rIdx < ringCount; rIdx++) {
-          const baseExpand = maxR * (0.98 + rIdx * 0.14) + energy * (14 + rIdx * 7);
+        for (let rIdx = 0; rIdx < 2; rIdx++) {
+          const baseExpand = maxR * (0.98 + rIdx * 0.14) + energy * (10 + rIdx * 6);
           ctx.beginPath();
           ctx.arc(cx, cy, baseExpand, 0, TAU);
-          ctx.strokeStyle = `rgba(${theme.bgAccentRgb}, ${(isDrop ? 0.24 : 0.12) * (1 - rIdx * 0.25)})`;
-          ctx.lineWidth = isDrop ? 1.6 : 1;
-          ctx.stroke();
-        }
-
-        const spokeAlpha = 0.06 + energy * 0.1;
-        ctx.strokeStyle = `rgba(${theme.bgAccentRgb}, ${spokeAlpha.toFixed(3)})`;
-        ctx.lineWidth = 1;
-        for (let sIdx = 0; sIdx < 8; sIdx++) {
-          const a = (sIdx * TAU) / 8 + st.spinnerAngle * 0.08;
-          ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(a) * (maxR * 0.9), cy + Math.sin(a) * (maxR * 0.9));
-          ctx.lineTo(cx + Math.cos(a) * (maxR * 1.38), cy + Math.sin(a) * (maxR * 1.38));
+          ctx.strokeStyle = `rgba(${theme.bgAccentRgb}, ${(isDrop ? 0.22 : 0.1) * (1 - rIdx * 0.3)})`;
+          ctx.lineWidth = 1;
           ctx.stroke();
         }
       }
@@ -172,39 +205,88 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, st.dialVisualAlpha));
 
-      const beatExpand = st.beatPulse * 2.2;
-      const bezelOuterR = maxR * 0.86 + beatExpand;
-      const trackRadius = maxR * 0.69;
-      const trackWidth = Math.max(22, maxR * 0.145);
+      const beatExpand = st.beatPulse * 2.0;
+      const bezelOuterR = maxR * 0.78 + beatExpand;
+      const trackRadius = maxR * 0.62;
+      const trackWidth = Math.max(20, maxR * 0.132);
       const innerRadius = trackRadius - trackWidth / 2;
       const outerRadius = trackRadius + trackWidth / 2;
 
+      // 1. DIEGETIC RADIAL FREQUENCY SPECTRUM (36 crisp vector ticks hugging outer dial)
+      if (bgFxMode === 'dynamic' && st.spectrumBins.length > 0) {
+        const binCount = st.spectrumBins.length;
+        const specBaseR = bezelOuterR + 17;
+        for (let i = 0; i < binCount; i++) {
+          const angle = -Math.PI / 2 + (i * TAU) / binCount;
+          const mag = st.spectrumBins[i] || 0;
+          const barLen = 2 + mag * Math.max(12, maxR * 0.12);
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(angle) * specBaseR, cy + Math.sin(angle) * specBaseR);
+          ctx.lineTo(cx + Math.cos(angle) * (specBaseR + barLen), cy + Math.sin(angle) * (specBaseR + barLen));
+          ctx.strokeStyle =
+            mag > 0.65
+              ? streakTier >= 2
+                ? '#fbbf24'
+                : theme.bright
+              : `rgba(${theme.bgAccentRgb}, ${(0.28 + mag * 0.5).toFixed(2)})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      // 2. DIEGETIC SONG PROGRESS RING ARC (wrapped cleanly around outer perimeter)
+      const progR = bezelOuterR + 11;
+      ctx.beginPath();
+      ctx.arc(cx, cy, progR, 0, TAU);
+      ctx.strokeStyle = '#1b2230';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      if (st.songProgressRatio > 0.002) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, progR, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, st.songProgressRatio));
+        ctx.strokeStyle = streakTier >= 2 ? '#fbbf24' : theme.bright;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+
+      // Section cue notches along the progress arc
+      for (let s = 0; s < st.songSections.length; s++) {
+        const cueAngle = -Math.PI / 2 + TAU * st.songSections[s].startPct;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(cueAngle) * (progR - 3), cy + Math.sin(cueAngle) * (progR - 3));
+        ctx.lineTo(cx + Math.cos(cueAngle) * (progR + 3), cy + Math.sin(cueAngle) * (progR + 3));
+        ctx.strokeStyle = '#f3f4f6';
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
+
+      // 3. BPM-Reactive 60 Perimeter Bezel Ticks (escalating accent with combo tier)
       for (let i = 0; i < 60; i++) {
         const angle = (i * TAU) / 60;
         const isMajor = i % 5 === 0;
-        const rStart = bezelOuterR + 2;
-        const rEnd = bezelOuterR + (isMajor ? 9 : 4);
+        const rStart = bezelOuterR + 1.5;
+        const rEnd = bezelOuterR + (isMajor ? 8 : 3.5);
         ctx.beginPath();
         ctx.moveTo(cx + Math.cos(angle) * rStart, cy + Math.sin(angle) * rStart);
         ctx.lineTo(cx + Math.cos(angle) * rEnd, cy + Math.sin(angle) * rEnd);
-        ctx.strokeStyle = isMajor ? '#4b5563' : '#1f2430';
+        ctx.strokeStyle = isMajor
+          ? streakTier === 3
+            ? '#ffffff'
+            : streakTier === 2
+            ? '#fbbf24'
+            : streakTier === 1
+            ? theme.bright
+            : '#4b5563'
+          : '#1f2430';
         ctx.lineWidth = isMajor ? 1.5 : 1;
         ctx.stroke();
       }
 
-      const bezelGrad = ctx.createLinearGradient(
-        cx - bezelOuterR,
-        cy - bezelOuterR,
-        cx + bezelOuterR,
-        cy + bezelOuterR,
-      );
-      bezelGrad.addColorStop(0, 'rgba(26, 31, 41, 0.94)');
-      bezelGrad.addColorStop(0.5, 'rgba(16, 19, 26, 0.94)');
-      bezelGrad.addColorStop(1, 'rgba(7, 8, 12, 0.96)');
-
+      // Solid Tactile Bezel Body
       ctx.beginPath();
       ctx.arc(cx, cy, bezelOuterR, 0, TAU);
-      ctx.fillStyle = bezelGrad;
+      ctx.fillStyle = '#0c0e13';
       ctx.fill();
 
       ctx.beginPath();
@@ -213,13 +295,16 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ? '#fde047'
         : isIlluminated
         ? theme.bright
+        : streakTier >= 2
+        ? '#fbbf24'
         : '#2e3545';
       ctx.lineWidth = st.lessonSlowActive ? 2.2 : 1.35;
       ctx.stroke();
 
+      // Track Channel
       ctx.beginPath();
       ctx.arc(cx, cy, trackRadius, 0, TAU);
-      ctx.strokeStyle = '#0c0f15';
+      ctx.strokeStyle = '#07090d';
       ctx.lineWidth = trackWidth;
       ctx.stroke();
 
@@ -231,10 +316,22 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
 
       ctx.beginPath();
       ctx.arc(cx, cy, innerRadius, 0, TAU);
-      ctx.strokeStyle = '#1f2430';
+      ctx.strokeStyle = streakTier >= 2 ? '#374052' : '#1f2430';
       ctx.lineWidth = 1;
       ctx.stroke();
 
+      // Harmonic Inner Resonance Ring at 50x+ Combo
+      if (streakTier >= 2) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, innerRadius - 5, 0, TAU);
+        ctx.strokeStyle = streakTier === 3 ? '#ffffff' : '#fbbf24';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([8, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Directional Trail
       if (st.phase === 'PLAYING' || st.phase === 'TUTORIAL_CINEMATIC') {
         const speedRatio = Math.min(1, Math.max(0, (st.angularSpeed - 1.2) / 6.2));
         const trailSpan = 0.18 + speedRatio * 0.52;
@@ -253,6 +350,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         }
       }
 
+      // Portal Nodes
       if (st.portal) {
         const ex = cx + Math.cos(st.portal.entryAngle) * trackRadius;
         const ey = cy + Math.sin(st.portal.entryAngle) * trackRadius;
@@ -278,6 +376,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         });
       }
 
+      // Hazard Mines
       for (let i = 0; i < st.hazards.length; i++) {
         const h = st.hazards[i];
         ctx.beginPath();
@@ -295,6 +394,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.fillText('×', hx, hy);
       }
 
+      // Target Sectors
       const isFailed = st.phase === 'SUMMARY' && Boolean(st.missReasonText);
       for (let i = 0; i < st.targets.length; i++) {
         const t = st.targets[i];
@@ -373,10 +473,11 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.stroke();
       }
 
+      // Hit Wave Ripples
       for (let i = 0; i < st.hitEffects.length; i++) {
         const fx = st.hitEffects[i];
         const progress = 1 - fx.timer / fx.duration;
-        const waveRadius = bezelOuterR + 2 + progress * 16;
+        const waveRadius = bezelOuterR + 2 + progress * 14;
         ctx.save();
         ctx.globalAlpha = Math.max(0, 1 - progress);
         ctx.beginPath();
@@ -385,8 +486,8 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.lineWidth = Math.max(1, 2.2 * (1 - progress));
         ctx.stroke();
 
-        const tx = cx + Math.cos(fx.angle) * (bezelOuterR + 15 + progress * 8);
-        const ty = cy + Math.sin(fx.angle) * (bezelOuterR + 15 + progress * 8);
+        const tx = cx + Math.cos(fx.angle) * (bezelOuterR + 16 + progress * 8);
+        const ty = cy + Math.sin(fx.angle) * (bezelOuterR + 16 + progress * 8);
         ctx.fillStyle = fx.color;
         ctx.font = '800 10px ui-monospace, Menlo, monospace';
         ctx.textAlign = 'center';
@@ -395,17 +496,60 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.restore();
       }
 
-      const hubRadius = innerRadius * 0.52;
+      // 4. DIEGETIC CURVED HIT-ERROR TIMING GAUGE (hugged inside lower hub arc)
+      const gaugeR = innerRadius * 0.78;
+      const gaugeCenter = Math.PI / 2;
+      const gaugeHalfSpan = 0.72;
+      ctx.beginPath();
+      ctx.arc(cx, cy, gaugeR, gaugeCenter - gaugeHalfSpan, gaugeCenter + gaugeHalfSpan);
+      ctx.strokeStyle = '#222733';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Center 0° white notch
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + gaugeR - 5);
+      ctx.lineTo(cx, cy + gaugeR + 5);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Error ticks along the curved arc (-early left, +late right from player perspective)
+      for (let i = 0; i < st.hitErrorTicks.length; i++) {
+        const tick = st.hitErrorTicks[i];
+        const alpha = Math.max(0, 1 - tick.age / 1.8);
+        if (alpha <= 0) continue;
+        // On bottom arc: Math.PI/2 + offset moves left when positive (clockwise), so invert to keep Early=Left, Late=Right
+        const tickAngle = gaugeCenter - tick.offsetSigned * (gaugeHalfSpan * 0.92);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(tickAngle) * (gaugeR - 4), cy + Math.sin(tickAngle) * (gaugeR - 4));
+        ctx.lineTo(cx + Math.cos(tickAngle) * (gaugeR + 4), cy + Math.sin(tickAngle) * (gaugeR + 4));
+        ctx.strokeStyle = tick.color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 5. DIEGETIC PERIPHERAL CENTER HUB (Live Combo + Judgment Flash at Focal Point)
+      const hubRadius = innerRadius * 0.54;
       const hubActive = isIlluminated || st.hubStatusTimer > 0;
 
       ctx.beginPath();
       ctx.arc(cx, cy, hubRadius, 0, TAU);
-      ctx.fillStyle = isFailed ? '#1f0b0e' : hubActive ? theme.hubActiveFill : '#090b10';
+      ctx.fillStyle = isFailed ? '#1f0b0e' : hubActive ? theme.hubActiveFill : '#080a0f';
       ctx.fill();
 
       ctx.beginPath();
       ctx.arc(cx, cy, hubRadius, 0, TAU);
-      ctx.strokeStyle = isFailed ? '#ef4444' : hubActive ? theme.bright : '#242936';
+      ctx.strokeStyle = isFailed
+        ? '#ef4444'
+        : hubActive
+        ? theme.bright
+        : streakTier >= 2
+        ? '#fbbf24'
+        : '#242936';
       ctx.lineWidth = hubActive ? 1.5 : 1;
       ctx.stroke();
 
@@ -414,27 +558,35 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
 
       if (isFailed) {
         ctx.fillStyle = '#ef4444';
-        ctx.font = '800 11px ui-monospace, Menlo, monospace';
-        ctx.fillText('MISS', cx, cy - 7);
+        ctx.font = '800 12px ui-monospace, Menlo, monospace';
+        ctx.fillText('MISS', cx, cy - 8);
         ctx.fillStyle = '#fca5a5';
         ctx.font = '700 10px ui-monospace, Menlo, monospace';
         ctx.fillText(`${st.missDegrees}°`, cx, cy + 8);
-      } else if (st.hubStatusTimer > 0) {
-        ctx.fillStyle = st.hubStatusColor || theme.bright;
-        ctx.font = '800 11px ui-monospace, Menlo, monospace';
-        ctx.fillText(st.hubStatusText, cx, cy);
-      } else {
-        ctx.fillStyle = isIlluminated ? theme.bright : '#9ca3af';
-        ctx.font = '800 11px ui-monospace, Menlo, monospace';
-        let centerText = 'READY';
-        if (st.phase === 'PLAYING') {
-          centerText = st.lessonSlowActive ? 'DIAL 0.28×' : st.direction === 1 ? 'CW ↻' : 'CCW ↺';
-        } else if (st.phase === 'PAUSED') {
-          centerText = 'PAUSED';
+      } else if (st.phase === 'PLAYING') {
+        if (st.hubStatusTimer > 0) {
+          ctx.fillStyle = st.hubStatusColor || theme.bright;
+          ctx.font = '900 11px ui-monospace, Menlo, monospace';
+          ctx.fillText(st.hubStatusText, cx, cy - 10);
+          ctx.fillStyle = streakTier >= 2 ? '#fbbf24' : '#f3f4f6';
+          ctx.font = '900 18px ui-monospace, Menlo, monospace';
+          ctx.fillText(`${st.streak}x`, cx, cy + 8);
+        } else {
+          ctx.fillStyle = st.lessonSlowActive ? '#fde047' : isIlluminated ? theme.bright : '#9ca3af';
+          ctx.font = '800 10px ui-monospace, Menlo, monospace';
+          const dirLabel = st.lessonSlowActive ? 'DIAL 0.28×' : st.direction === 1 ? 'CW ↻' : 'CCW ↺';
+          ctx.fillText(dirLabel, cx, cy - 10);
+          ctx.fillStyle = streakTier >= 2 ? '#fbbf24' : '#f3f4f6';
+          ctx.font = '900 18px ui-monospace, Menlo, monospace';
+          ctx.fillText(`${st.streak}x`, cx, cy + 8);
         }
-        ctx.fillText(centerText, cx, cy);
+      } else {
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '800 11px ui-monospace, Menlo, monospace';
+        ctx.fillText(st.phase === 'PAUSED' ? 'PAUSED' : 'READY', cx, cy);
       }
 
+      // Needle Arm & Pointer
       const sa = st.spinnerAngle;
       const cosA = Math.cos(sa);
       const sinA = Math.sin(sa);
@@ -467,35 +619,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.fillStyle = needleColor;
       ctx.fill();
 
-      const barW = Math.min(200, width * 0.56);
-      const barX = cx - barW / 2;
-      const barY = height - 9;
-
-      ctx.fillStyle = 'rgba(12, 14, 18, 0.85)';
-      ctx.fillRect(barX, barY - 4, barW, 8);
-      ctx.strokeStyle = '#242936';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(barX, barY - 4, barW, 8);
-
-      const coreW = barW * 0.24;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
-      ctx.fillRect(cx - coreW / 2, barY - 3, coreW, 6);
-
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(cx - 1, barY - 6, 2, 12);
-
-      for (let i = 0; i < st.hitErrorTicks.length; i++) {
-        const tick = st.hitErrorTicks[i];
-        const alpha = Math.max(0, 1 - tick.age / 1.8);
-        if (alpha <= 0) continue;
-        const tx = cx + tick.offsetSigned * (barW / 2 - 2);
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = tick.color;
-        ctx.fillRect(tx - 1.25, barY - 5, 2.5, 10);
-        ctx.restore();
-      }
-
       ctx.restore();
       rafId = requestAnimationFrame(drawFrame);
     };
@@ -508,128 +631,187 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
     };
   }, [renderStateRef, themeId, bgFxMode]);
 
+  const streakGoal = streak >= 50 ? 100 : streak >= 25 ? 50 : 25;
+  const streakGaugeProgress = Math.min(1, streak / streakGoal);
+  const streakGaugeColor =
+    streak >= 100 ? '#ffffff' : streak >= 50 ? '#fbbf24' : 'var(--accent-bright)';
+  const multGaugeProgress = Math.min(1, Math.max(0.08, (totalMult - 0.8) / 3.2));
+
   return (
     <motion.main
-      initial={{ opacity: 0, scale: 0.94 }}
+      initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
-      className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden bg-transparent px-4 py-3"
+      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+      className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden bg-transparent px-3 sm:px-6 py-2"
     >
-      {/* Song Progress Bar */}
-      <div className="z-10 mb-2 flex w-[min(88vw,480px)] flex-col gap-1">
-        <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#d1d5db] tabular-nums">
-          <span className="truncate pr-2">{songHudTitle}</span>
-          <span className="shrink-0">{songTimerText}</span>
-        </div>
-        <div className="clip-chamfer-sm h-1.5 w-full overflow-hidden bg-[#0c1017]/90">
-          <div
-            className="h-full bg-[var(--theme-primary)] transition-[width] duration-100 ease-linear"
-            style={{ width: `${songProgressPct.toFixed(1)}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Live Score, Streak, Multiplier & Unbanked Orbs Strip */}
-      <div className="z-10 mb-1.5 flex items-baseline justify-center gap-5 sm:gap-8">
-        <div className="flex min-w-[74px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Score</span>
-          <span className="tabular-nums text-3xl sm:text-4xl font-extrabold leading-tight text-[#f3f4f6]">
+      {/* Compact Mobile Telemetry Strip (visible < md only, where TopBar notch is hidden) */}
+      <div className="z-10 flex md:hidden w-full max-w-md items-center justify-between border-b border-[#1c2331] pb-2 mb-1 tabular-nums">
+        <div>
+          <span className="block text-[9px] font-bold uppercase tracking-[0.18em] text-[#6b7280]">
+            Score
+          </span>
+          <span className="font-display text-2xl font-black leading-none text-white">
             {score.toLocaleString()}
           </span>
         </div>
-        <div className="flex min-w-[56px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Combo</span>
-          <motion.span
-            key={streak}
-            initial={streak > 0 ? { scale: 1.24 } : false}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.14 }}
-            className="tabular-nums text-xl font-bold leading-tight text-[#d1d5db]"
-          >
+        <div className="text-center">
+          <span className="block text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--accent-bright)]">
+            {songTimerText}
+          </span>
+          <span className={`text-lg font-black leading-none ${comboTier.accentClass}`}>
             {streak}x
-          </motion.span>
-        </div>
-        <div className="flex min-w-[56px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Mult</span>
-          <span className="tabular-nums text-xl font-bold leading-tight text-[var(--theme-bright)]">
-            {totalMult.toFixed(2)}x
           </span>
         </div>
-        <div className="flex min-w-[64px] flex-col items-center" title="Unbanked Orbs (Requires C rank or higher to Cash Out)">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#fbbf24]">Orbs</span>
-          <span className="flex items-center gap-1 tabular-nums text-xl font-extrabold leading-tight text-[#fbbf24]">
-            <Coins className="h-3.5 w-3.5" />
-            <span>+{unbankedOrbs}</span>
+        <div className="text-right">
+          <span className="block text-[9px] font-bold uppercase tracking-[0.18em] text-[#fbbf24]">
+            Orbs
           </span>
-        </div>
-        <div className="hidden sm:flex min-w-[56px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Best</span>
-          <span className="tabular-nums text-xl font-bold leading-tight text-[#d1d5db]">
-            {bestScore.toLocaleString()}
+          <span className="text-xl font-black leading-none text-[#fbbf24]">
+            +{unbankedOrbs}
           </span>
         </div>
       </div>
 
-      {/* High-DPI Dial Canvas Framed by Kenney-Style HUD Corner Reticles */}
-      <div
-        ref={wrapRef}
-        className="relative flex h-[min(70vw,48vh,405px)] w-[min(70vw,48vh,405px)] items-center justify-center"
-      >
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 100 100"
-          className="pointer-events-none absolute inset-0 h-full w-full opacity-45"
-          fill="none"
-        >
-          <path d="M2 14 L2 2 L14 2" stroke="var(--theme-bright)" strokeWidth="1.2" />
-          <path d="M86 2 L98 2 L98 14" stroke="var(--theme-bright)" strokeWidth="1.2" />
-          <path d="M2 86 L2 98 L14 98" stroke="var(--theme-bright)" strokeWidth="1.2" />
-          <path d="M86 98 L98 98 L98 86" stroke="var(--theme-bright)" strokeWidth="1.2" />
-        </svg>
-
-        <canvas
-          ref={canvasRef}
-          onPointerDown={(e) => {
-            if (!allowPointerTap) return;
-            if (e.button !== 0 && e.pointerType === 'mouse') return;
-            e.preventDefault();
-            onTriggerTap();
-          }}
-          aria-label="ORBIT Rhythm Calibration Ring"
-          className="block h-full w-full cursor-pointer touch-manipulation"
-        />
-
-        {activeLesson && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="clip-chamfer-md pointer-events-auto absolute -bottom-1 left-1/2 z-20 w-[min(92vw,375px)] -translate-x-1/2 border border-[#fde047] bg-[#0b0e14]/96 px-4 py-2.5"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="tabular-nums text-[10px] font-extrabold tracking-widest uppercase text-[#fde047]">
-                Tutorial Guide · {activeLesson.title}
+      {/* CLEAN PERIPHERAL HUD: Left Telemetry + Central Calibration Ring + Right Combo Gauge */}
+      <div className="relative z-10 flex w-full max-w-6xl flex-1 min-h-0 items-center justify-center gap-4 lg:gap-12">
+        {/* LEFT WING HUD (Desktop md+) */}
+        <div className="hidden md:flex w-44 lg:w-52 flex-col items-end justify-center gap-5 text-right tabular-nums">
+          <div>
+            <span className="block text-[10px] font-bold tracking-[0.24em] uppercase text-[#9ca3af]">
+              Score
+            </span>
+            <span className="font-display mt-0.5 block text-5xl lg:text-6xl font-black leading-none text-white">
+              {score.toLocaleString()}
+            </span>
+            {bestScore > 0 && (
+              <span className="mt-1.5 block text-[11px] font-bold text-[#6b7280]">
+                Best <strong className="text-[#d1d5db]">{bestScore.toLocaleString()}</strong>
               </span>
-              <button
-                type="button"
-                onClick={onSkipTutorial}
-                className="text-[10px] font-bold text-[#9ca3af] hover:text-white underline cursor-pointer whitespace-nowrap"
-              >
-                Skip Guide
-              </button>
+            )}
+          </div>
+
+          <RadialHudGauge
+            valueText={`${totalMult.toFixed(2)}x`}
+            label="Mult"
+            sublabel={`Combo ${streakMult.toFixed(2)}x`}
+            progress={multGaugeProgress}
+            color="var(--accent-bright)"
+            size={108}
+          />
+
+          <span
+            className="border-r-2 pr-2.5 text-[11px] font-black uppercase tracking-[0.16em]"
+            style={{ borderColor: modeColor, color: modeColor }}
+          >
+            {modeName}
+          </span>
+        </div>
+
+        {/* CENTER: High-DPI Diegetic Calibration Ring */}
+        <div
+          ref={wrapRef}
+          className="relative flex h-[min(78vw,66vh,480px)] w-[min(78vw,66vh,480px)] shrink-0 items-center justify-center"
+        >
+          <canvas
+            ref={canvasRef}
+            onPointerDown={(e) => {
+              if (!allowPointerTap) return;
+              if (e.button !== 0 && e.pointerType === 'mouse') return;
+              e.preventDefault();
+              onTriggerTap();
+            }}
+            aria-label="ORBIT Rhythm Calibration Ring"
+            className="block h-full w-full cursor-pointer touch-manipulation"
+          />
+
+          {activeLesson && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="clip-chamfer-md pointer-events-auto absolute -bottom-2 left-1/2 z-20 w-[min(92vw,375px)] -translate-x-1/2 border border-[#fde047] bg-[#0b0e14] px-4 py-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="tabular-nums text-[10px] font-extrabold tracking-widest uppercase text-[#fde047]">
+                  Tutorial Guide · {activeLesson.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={onSkipTutorial}
+                  className="text-[10px] font-bold text-[#9ca3af] hover:text-white underline cursor-pointer whitespace-nowrap"
+                >
+                  Skip Guide
+                </button>
+              </div>
+              <p className="mt-1 text-xs leading-snug text-[#f3f4f6]">{activeLesson.instruction}</p>
+            </motion.div>
+          )}
+        </div>
+
+        {/* RIGHT WING HUD (Desktop md+) */}
+        <div className="hidden md:flex w-44 lg:w-52 flex-col items-start justify-center gap-5 text-left tabular-nums">
+          <RadialHudGauge
+            valueText={`${streak}x`}
+            label={comboTier.label}
+            sublabel={`Next ${streakGoal}x`}
+            progress={streakGaugeProgress}
+            color={streakGaugeColor}
+            size={116}
+          />
+
+          <div
+            className="border-l-2 border-[#fbbf24] pl-3"
+            title="Unbanked Orbs (Requires C rank or higher to Cash Out)"
+          >
+            <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-[#fbbf24]">
+              Orbs
+            </span>
+            <span className="mt-0.5 flex items-center gap-1.5 text-2xl font-black leading-none text-[#fbbf24]">
+              <Coins className="h-4 w-4" />
+              <span>+{unbankedOrbs}</span>
+            </span>
+          </div>
+
+          {(shields > 0 || isTutorialRun) && (
+            <div className="flex items-center gap-2 text-xs font-extrabold">
+              <Shield className="h-4 w-4 text-[var(--accent-bright)]" />
+              {isTutorialRun ? (
+                <span className="text-[#fbbf24]">Shield ×{tutorialLives}</span>
+              ) : (
+                <span className="text-[var(--accent-bright)]">Aegis ×{shields}</span>
+              )}
             </div>
-            <p className="mt-1 text-xs leading-snug text-[#f3f4f6]">{activeLesson.instruction}</p>
-          </motion.div>
-        )}
+          )}
+
+          {/* Compact Hexagonal Live Keycap Indicators */}
+          <div className="flex items-center gap-2">
+            <span
+              data-pressed={pressedKey === 'k1'}
+              className="tactile-key clip-hex flex h-8 min-w-[54px] items-center justify-center bg-[#2d3648] p-[1px] data-[pressed=true]:bg-[var(--accent-bright)]"
+            >
+              <span className="clip-hex flex h-full w-full items-center justify-center bg-[#0c0f16] px-2 text-[10px] font-black text-[#d1d5db]">
+                {trigger1Label}
+              </span>
+            </span>
+            <span
+              data-pressed={pressedKey === 'k2'}
+              className="tactile-key clip-hex flex h-8 min-w-[54px] items-center justify-center bg-[#2d3648] p-[1px] data-[pressed=true]:bg-[var(--accent-bright)]"
+            >
+              <span className="clip-hex flex h-full w-full items-center justify-center bg-[#0c0f16] px-2 text-[10px] font-black text-[#d1d5db]">
+                {trigger2Label}
+              </span>
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Tutorial Complete Banner Stripe */}
       <div
         aria-live="polite"
-        className={`pointer-events-none fixed left-0 right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1 border-y-2 border-[var(--theme-primary)] bg-[#090c12]/96 py-4 px-5 transition-all duration-200 ${
+        className={`pointer-events-none fixed left-0 right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1 border-y-2 border-[var(--accent)] bg-[#090c12] py-4 px-5 transition-all duration-200 ${
           showTutorialCompleteStripe ? 'scale-y-100 opacity-100' : 'scale-y-0 opacity-0'
         }`}
       >
-        <span className="tabular-nums text-[11px] font-extrabold tracking-[0.2em] uppercase text-[var(--theme-bright)]">
+        <span className="tabular-nums text-[11px] font-extrabold tracking-[0.2em] uppercase text-[var(--accent-bright)]">
           Calibration Verified
         </span>
         <span className="font-display text-2xl font-black tracking-[0.14em] uppercase text-[#f3f4f6]">
@@ -640,29 +822,12 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         </span>
       </div>
 
-      {/* Footer Wave & Streak Telemetry */}
-      <footer className="z-10 mt-2 flex min-h-[42px] flex-col items-center gap-1 text-center">
-        <p className="text-xs font-medium text-[#e5e7eb] max-w-[92vw]">{promptHint}</p>
-        <div className="flex flex-wrap items-center justify-center gap-2.5 text-[11px] font-bold tracking-wider uppercase text-[#9ca3af] tabular-nums">
-          <span style={{ color: modeColor }}>{modeName}</span>
-          <span aria-hidden="true">·</span>
-          <span>Combo {streakMult.toFixed(2)}x</span>
-          <span aria-hidden="true">·</span>
-          <span>Hit Error: Early ◀ | ▶ Late</span>
-          {shields > 0 && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="text-[var(--theme-bright)]">Shield x{shields}</span>
-            </>
-          )}
-          {isTutorialRun && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="text-[#fbbf24]">Tutorial Shield: {tutorialLives} Lives</span>
-            </>
-          )}
+      {/* Quiet Prompt Hint ONLY while IDLE / pre-start */}
+      {phase === 'IDLE' && (
+        <div className="z-10 pb-2 text-center text-xs font-semibold text-[#9ca3af]">
+          {promptHint}
         </div>
-      </footer>
+      )}
     </motion.main>
   );
 };

@@ -1,8 +1,12 @@
-import bgCosmicImg from '../assets/images/bg_cosmic_rave_1795492887898.jpg';
-import bgBirdyImg from '../assets/images/bg_little_birdy_1795492887507.jpg';
-import bgMechaImg from '../assets/images/bg_mecha_dubstep_1795492887413.jpg';
-import bgMomentsImg from '../assets/images/bg_moments_chill_1795492886033.jpg';
-import bgAliensImg from '../assets/images/bg_play_aliens_1795492887670.jpg';
+import bgCosmicImg from '../assets/images/real_cosmic.jpg';
+import bgBirdyImg from '../assets/images/real_birdy.jpg';
+import bgMechaImg from '../assets/images/real_mecha_cern.jpg';
+import bgMomentsImg from '../assets/images/real_moments_paranal.jpg';
+import bgAliensImg from '../assets/images/real_aliens.jpg';
+import bgEndgameImg from '../assets/images/real_endgame.jpg';
+import bgSonicImg from '../assets/images/real_sonic.jpg';
+import bgSphereImg from '../assets/images/real_sphere.jpg';
+import bgSpeedLightImg from '../assets/images/real_speedlight.jpg';
 import {
   ChassisTheme,
   DifficultyConfig,
@@ -287,7 +291,7 @@ export const SONG_CATALOG: SongDefinition[] = [
     scaleNotes: [69, 71, 72, 74, 76, 77, 79, 81],
     durationSec: 92,
     audioUrl: '',
-    bgImageUrl: bgMechaImg,
+    bgImageUrl: bgEndgameImg,
     orbCost: 50,
     chillOnly: false,
     synthFallback: {
@@ -323,7 +327,7 @@ export const SONG_CATALOG: SongDefinition[] = [
     scaleNotes: [62, 64, 65, 67, 69, 70, 72, 74],
     durationSec: 96,
     audioUrl: '',
-    bgImageUrl: bgAliensImg,
+    bgImageUrl: bgSonicImg,
     orbCost: 80,
     chillOnly: false,
     synthFallback: {
@@ -359,7 +363,7 @@ export const SONG_CATALOG: SongDefinition[] = [
     scaleNotes: [64, 66, 67, 69, 71, 72, 74, 76],
     durationSec: 100,
     audioUrl: '',
-    bgImageUrl: bgMomentsImg,
+    bgImageUrl: bgSphereImg,
     orbCost: 110,
     chillOnly: false,
     synthFallback: {
@@ -395,7 +399,7 @@ export const SONG_CATALOG: SongDefinition[] = [
     scaleNotes: [61, 63, 64, 66, 68, 69, 71, 73],
     durationSec: 104,
     audioUrl: '',
-    bgImageUrl: bgCosmicImg,
+    bgImageUrl: bgSpeedLightImg,
     orbCost: 150,
     chillOnly: false,
     synthFallback: {

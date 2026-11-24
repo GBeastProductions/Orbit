@@ -19,18 +19,14 @@ export const ArcadeFrame: React.FC<ArcadeFrameProps> = ({
   size = 'lg',
 }) => {
   const strokeColor =
-    accent === 'gold' ? '#fbbf24' : accent === 'crimson' ? '#ef4444' : 'var(--theme-bright)';
+    accent === 'gold' ? '#fbbf24' : accent === 'crimson' ? '#ef4444' : 'var(--accent-bright)';
   const clipClass = size === 'lg' ? 'clip-chamfer-lg' : 'clip-chamfer-md';
 
   return (
     <div className={`relative ${className}`}>
-      {/* Outer Rim Glow Shell */}
-      <div
-        className={`${clipClass} relative h-full w-full bg-[#2b3344] p-[1.5px]`}
-      >
-        <div className={`${clipClass} relative h-full w-full bg-[#0b0e14]/96`}>
-          {children}
-        </div>
+      {/* Outer Rim Frame */}
+      <div className={`${clipClass} relative h-full w-full bg-[#2b3344] p-[1px]`}>
+        <div className={`${clipClass} relative h-full w-full bg-[#0b0e14]`}>{children}</div>
       </div>
 
       {/* Top-Left & Bottom-Right Vector Corner Brackets */}
@@ -83,17 +79,17 @@ export const ArcadeSwitch: React.FC<ArcadeSwitchProps> = ({
       whileTap={{ scale: 0.94 }}
       onClick={onToggle}
       aria-pressed={checked}
-      className={`clip-chamfer-sm relative flex min-w-[72px] items-center justify-between gap-2 px-3 py-1.5 text-xs font-black tracking-wider transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+      className={`tactile-key clip-chamfer-sm relative flex min-w-[72px] items-center justify-between gap-2 px-3 py-1.5 text-xs font-black tracking-wider transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
         checked
-          ? 'bg-[var(--theme-primary)] text-[var(--theme-on-primary)]'
-          : 'bg-[#1a202c] text-[#9ca3af] hover:text-white'
+          ? 'bg-[var(--accent)] text-[var(--accent-on)]'
+          : 'border border-[#2d3648] bg-[#1a202c] text-[#9ca3af] hover:text-white'
       }`}
     >
       <span>{checked ? labelOn : labelOff}</span>
       <span
         aria-hidden="true"
         className={`h-2 w-2 rotate-45 ${
-          checked ? 'bg-[var(--theme-on-primary)]' : 'bg-[#4b5563]'
+          checked ? 'bg-[var(--accent-on)]' : 'bg-[#4b5563]'
         }`}
       />
     </motion.button>
@@ -117,9 +113,8 @@ export const ZoomWarpTransition: React.FC<ZoomWarpTransitionProps> = ({ active, 
       initial={{ opacity: 0 }}
       animate={{ opacity: [0, 1, 1, 0] }}
       transition={{ duration: 0.48, times: [0, 0.25, 0.72, 1], ease: [0.16, 1, 0.3, 1] }}
-      className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-[#050608]/85"
+      className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-[#050608]/92"
     >
-      {/* Expanding Concentric Orbital Reticles */}
       <motion.div
         initial={{ scale: 0.35, opacity: 0.2, rotate: -35 }}
         animate={{ scale: 2.35, opacity: [0.2, 1, 0], rotate: 45 }}
@@ -131,18 +126,16 @@ export const ZoomWarpTransition: React.FC<ZoomWarpTransitionProps> = ({ active, 
             cx="100"
             cy="100"
             r="88"
-            stroke="var(--theme-bright)"
+            stroke="var(--accent-bright)"
             strokeWidth="2.5"
             strokeDasharray="28 12"
           />
-          <circle
-            cx="100"
-            cy="100"
-            r="64"
-            stroke="var(--theme-primary)"
-            strokeWidth="1.5"
+          <circle cx="100" cy="100" r="64" stroke="var(--accent)" strokeWidth="1.5" />
+          <path
+            d="M100 4 L100 22 M100 178 L100 196 M4 100 L22 100 M178 100 L196 100"
+            stroke="#ffffff"
+            strokeWidth="2.5"
           />
-          <path d="M100 4 L100 22 M100 178 L100 196 M4 100 L22 100 M178 100 L196 100" stroke="#ffffff" strokeWidth="2.5" />
         </svg>
       </motion.div>
 
@@ -152,7 +145,7 @@ export const ZoomWarpTransition: React.FC<ZoomWarpTransitionProps> = ({ active, 
         transition={{ duration: 0.46, ease: [0.16, 1, 0.3, 1] }}
         className="absolute text-center"
       >
-        <span className="font-display text-sm font-black tracking-[0.34em] uppercase text-[var(--theme-bright)]">
+        <span className="font-display text-sm font-black tracking-[0.34em] uppercase text-[var(--accent-bright)]">
           {label}
         </span>
       </motion.div>

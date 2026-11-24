@@ -1,8 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { BookOpen, Coins, ListMusic, Play, Settings } from 'lucide-react';
+import {
+  BookOpen,
+  Coins,
+  ListMusic,
+  Play,
+  Settings,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { CHASSIS_THEMES } from '../data/catalog';
 import { PlayerProfile, SongDefinition } from '../types/game';
+import { DiscCartridge } from './DiscCartridge';
+import { HexUtilityButton, OrbitOrnamentalCrest } from './OrbitVectorAssets';
 
 interface TitleScreenProps {
   profile: PlayerProfile;
@@ -12,249 +22,447 @@ interface TitleScreenProps {
   onOpenOrbVault: () => void;
   onOpenSettings: () => void;
   onOpenIndex: () => void;
+  onToggleMusic: () => void;
   onHoverTick: () => void;
 }
 
-export const TitleScreen: React.FC<TitleScreenProps> = ({
-  profile,
-  activeSong,
-  onPlayPrimary,
-  onEnterSongSelect,
-  onOpenOrbVault,
-  onOpenSettings,
-  onOpenIndex,
-  onHoverTick,
-}) => {
-  const theme = CHASSIS_THEMES[profile.theme] || CHASSIS_THEMES.emerald;
-  const playSublabel = !profile.tutorialSongCompleted
-    ? 'Start Calibration · Moments Passing Us'
-    : `Launch · ${activeSong.title}`;
+export const TitleScreen: React.FC<TitleScreenProps> = React.memo(
+  ({
+    profile,
+    activeSong,
+    onPlayPrimary,
+    onEnterSongSelect,
+    onOpenOrbVault,
+    onOpenSettings,
+    onOpenIndex,
+    onToggleMusic,
+    onHoverTick,
+  }) => {
+    const theme = CHASSIS_THEMES[profile.theme] || CHASSIS_THEMES.emerald;
+    const [pressedKey, setPressedKey] = useState<'k1' | 'k2' | null>(null);
+    const [beatPhase, setBeatPhase] = useState(0);
+    const [discHovered, setDiscHovered] = useState(false);
 
-  const menuBlades = [
-    {
-      id: 'tracks',
-      label: 'Track Select',
-      meta: '9 Beatmaps',
-      widthClass: 'w-full',
-      Icon: ListMusic,
-      accent: 'text-[var(--theme-bright)]',
-      onClick: onEnterSongSelect,
-    },
-    {
-      id: 'vault',
-      label: 'Orb Vault',
-      meta: `${profile.orbs.toLocaleString()} Orbs`,
-      widthClass: 'w-[86%]',
-      Icon: Coins,
-      accent: 'text-[#fbbf24]',
-      onClick: onOpenOrbVault,
-    },
-    {
-      id: 'options',
-      label: 'Options',
-      meta: 'Keys & Audio',
-      widthClass: 'w-[72%]',
-      Icon: Settings,
-      accent: 'text-[#d1d5db]',
-      onClick: onOpenSettings,
-    },
-    {
-      id: 'index',
-      label: 'Wave Index',
-      meta: '15 Modes',
-      widthClass: 'w-[58%]',
-      Icon: BookOpen,
-      accent: 'text-[#9ca3af]',
-      onClick: onOpenIndex,
-    },
-  ];
+    const playSublabel = !profile.tutorialSongCompleted
+      ? 'Tutorial · Moments Passing Us'
+      : `${activeSong.num} · ${activeSong.title}`;
 
-  return (
-    <div className="relative z-10 flex h-dvh w-full items-center justify-center overflow-hidden px-6 sm:px-12 lg:px-20">
-      {/* Volumetric Green / Theme Ambient Lighting Beams */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: `radial-gradient(circle at 26% 50%, rgba(${theme.bgAccentRgb}, 0.24) 0%, rgba(${theme.bgAccentRgb}, 0.06) 38%, transparent 68%)`,
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-32 top-1/2 h-[540px] w-[540px] -translate-y-1/2 rounded-full opacity-25"
-        style={{
-          background: `radial-gradient(circle, rgba(${theme.bgAccentRgb}, 0.36) 0%, transparent 70%)`,
-        }}
-      />
+    const activeRecord = profile.songRecords[activeSong.id];
+    const activeBg =
+      profile.levelBgSettings[activeSong.id]?.customImageDataUrl || activeSong.bgImageUrl;
+    const beatIntervalMs = Math.round(60000 / Math.max(60, activeSong.bpm));
 
-      {/* Asymmetric 2-Column Hero Layout (Zero Top/Bottom Clutter) */}
-      <div className="relative z-10 grid w-full max-w-6xl grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] items-center gap-10 lg:gap-14">
-        {/* LEFT ANCHOR: Kinetic Orbital Reticle + Brand Wordmark */}
-        <motion.div
-          initial={{ opacity: 0, x: -24 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-          className="relative flex flex-col items-center lg:items-start text-center lg:text-left"
-        >
-          {/* Rotating Dual-Ring Vector Visualizer */}
-          <div className="relative mb-6 flex h-44 w-44 sm:h-56 sm:w-56 items-center justify-center">
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 240 240"
-              className="animate-orbit-cw absolute inset-0 h-full w-full"
-              fill="none"
+    useEffect(() => {
+      const id = window.setInterval(() => {
+        setBeatPhase((prev) => (prev + 1) % 4);
+      }, beatIntervalMs);
+      return () => window.clearInterval(id);
+    }, [beatIntervalMs]);
+
+    useEffect(() => {
+      const onDown = (e: KeyboardEvent) => {
+        if (e.repeat) return;
+        if (e.code === profile.trigger1Code) {
+          setPressedKey('k1');
+          onHoverTick();
+        } else if (e.code === profile.trigger2Code) {
+          setPressedKey('k2');
+          onHoverTick();
+        }
+      };
+      const onUp = (e: KeyboardEvent) => {
+        if (e.code === profile.trigger1Code || e.code === profile.trigger2Code) {
+          setPressedKey(null);
+        }
+      };
+      window.addEventListener('keydown', onDown);
+      window.addEventListener('keyup', onUp);
+      return () => {
+        window.removeEventListener('keydown', onDown);
+        window.removeEventListener('keyup', onUp);
+      };
+    }, [onHoverTick, profile.trigger1Code, profile.trigger2Code]);
+
+    const ribbonActions = [
+      {
+        id: 'play',
+        label: 'PLAY',
+        meta: playSublabel,
+        widthClass: 'w-full',
+        indentClass: 'ml-0',
+        primary: true,
+        Icon: Play,
+        borderClass: 'bg-[var(--accent)] hover:bg-[var(--accent-bright)]',
+        innerClass: 'bg-[#082118] group-hover:bg-[#0d2e22]',
+        labelClass: 'text-white',
+        metaClass: 'text-[var(--accent-bright)]',
+        onClick: onPlayPrimary,
+      },
+      {
+        id: 'tracks',
+        label: 'TRACK SELECT',
+        meta: '9 Beatmaps · NG',
+        widthClass: 'w-[96%]',
+        indentClass: 'sm:ml-2',
+        primary: false,
+        Icon: ListMusic,
+        borderClass: 'bg-[#2c3547] hover:bg-[var(--accent)]',
+        innerClass: 'bg-[#0a0d13] group-hover:bg-[#121824]',
+        labelClass: 'text-[#f3f4f6]',
+        metaClass: 'text-[var(--accent-bright)]',
+        onClick: onEnterSongSelect,
+      },
+      {
+        id: 'vault',
+        label: 'ORB VAULT',
+        meta: `${profile.orbs.toLocaleString()} Orbs`,
+        widthClass: 'w-[92%]',
+        indentClass: 'sm:ml-4',
+        primary: false,
+        Icon: Coins,
+        borderClass: 'bg-[#5c400a] hover:bg-[#fbbf24]',
+        innerClass: 'bg-[#100d06] group-hover:bg-[#1c1608]',
+        labelClass: 'text-[#fde68a]',
+        metaClass: 'text-[#fbbf24]',
+        onClick: onOpenOrbVault,
+      },
+      {
+        id: 'options',
+        label: 'OPTIONS',
+        meta: 'Keys & Audio',
+        widthClass: 'w-[88%]',
+        indentClass: 'sm:ml-6',
+        primary: false,
+        Icon: Settings,
+        borderClass: 'bg-[#262e3e] hover:bg-[#d1d5db]',
+        innerClass: 'bg-[#0a0d13] group-hover:bg-[#141a26]',
+        labelClass: 'text-[#e5e7eb]',
+        metaClass: 'text-[#9ca3af]',
+        onClick: onOpenSettings,
+      },
+      {
+        id: 'index',
+        label: 'WAVE INDEX',
+        meta: '15 Modes',
+        widthClass: 'w-[84%]',
+        indentClass: 'sm:ml-8',
+        primary: false,
+        Icon: BookOpen,
+        borderClass: 'bg-[#222836] hover:bg-[var(--accent-bright)]',
+        innerClass: 'bg-[#090b10] group-hover:bg-[#121722]',
+        labelClass: 'text-[#d1d5db]',
+        metaClass: 'text-[#9ca3af]',
+        onClick: onOpenIndex,
+      },
+    ];
+
+    return (
+      <div className="relative z-10 flex h-dvh w-full flex-col justify-between overflow-hidden px-5 py-4 sm:px-10 sm:py-6">
+        {/* Radial Vignette Behind Optical Disc & Menu */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: `radial-gradient(circle at 30% 50%, rgba(${theme.bgAccentRgb}, 0.18) 0%, rgba(${theme.bgAccentRgb}, 0.04) 38%, rgba(5,6,8,0.72) 78%)`,
+          }}
+        />
+
+        {/* TOP CORNER FLOATING ANCHORS */}
+        <div className="relative z-20 flex w-full items-start justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <HexUtilityButton
+              active={profile.musicEnabled}
+              accent="theme"
+              size="md"
+              onClick={onToggleMusic}
+              title={profile.musicEnabled ? 'Mute Soundtrack' : 'Enable Soundtrack'}
             >
-              <circle
-                cx="120"
-                cy="120"
-                r="110"
-                stroke="var(--theme-primary)"
-                strokeOpacity="0.45"
-                strokeWidth="1.5"
-                strokeDasharray="36 14 8 14"
-              />
-              <circle
-                cx="120"
-                cy="120"
-                r="92"
-                stroke="var(--theme-bright)"
-                strokeOpacity="0.8"
-                strokeWidth="3"
-                strokeDasharray="62 190"
-              />
-            </svg>
+              {profile.musicEnabled ? (
+                <Volume2 className="h-4 w-4" />
+              ) : (
+                <VolumeX className="h-4 w-4 text-[#6b7280]" />
+              )}
+            </HexUtilityButton>
 
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 240 240"
-              className="animate-orbit-ccw absolute inset-0 h-full w-full"
-              fill="none"
-            >
-              <circle
-                cx="120"
-                cy="120"
-                r="72"
-                stroke="#374052"
-                strokeWidth="1.5"
-                strokeDasharray="16 10"
-              />
-              <path
-                d="M120 18 L120 34 M120 206 L120 222 M18 120 L34 120 M206 120 L222 120"
-                stroke="var(--theme-bright)"
-                strokeWidth="2"
-              />
-            </svg>
-
-            {/* Inner Emblem Core */}
-            <div className="clip-chamfer-md flex h-24 w-24 items-center justify-center border border-[var(--theme-primary)]/50 bg-[#0b0f15]/90">
-              <div className="flex flex-col items-center">
-                <span className="h-3.5 w-3.5 rotate-45 bg-[var(--theme-bright)]" />
-                <span className="mt-2 tabular-nums text-[10px] font-black tracking-[0.26em] text-[#9ca3af]">
-                  1.0X
+            <div className="flex items-center gap-3.5 text-[11px] font-bold tabular-nums text-[#9ca3af]">
+              <div>
+                <span className="block text-[9px] uppercase tracking-[0.2em] text-[#6b7280]">
+                  Best
+                </span>
+                <span className="text-xs font-black text-[#f3f4f6]">
+                  {profile.bestScore.toLocaleString()}
+                </span>
+              </div>
+              <span aria-hidden="true" className="h-5 w-px bg-[#222733]" />
+              <div>
+                <span className="block text-[9px] uppercase tracking-[0.2em] text-[#6b7280]">
+                  Peak
+                </span>
+                <span className="text-xs font-black text-[var(--accent-bright)]">
+                  {profile.bestStreak}x
+                </span>
+              </div>
+              <span aria-hidden="true" className="h-5 w-px bg-[#222733]" />
+              <div>
+                <span className="block text-[9px] uppercase tracking-[0.2em] text-[#6b7280]">
+                  Orbs
+                </span>
+                <span className="text-xs font-black text-[#fbbf24]">
+                  {profile.orbs.toLocaleString()}
                 </span>
               </div>
             </div>
           </div>
 
-          <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-black tracking-[0.22em] text-[#f3f4f6] leading-none">
-            ORBIT
-          </h1>
-          <div className="mt-3 h-1 w-28 bg-[var(--theme-primary)]" />
-          <p className="mt-4 max-w-md text-sm sm:text-base font-medium leading-relaxed text-[#d1d5db]">
-            Precision circular rhythm calibrated to pure 1.0x Newgrounds soundtracks, 15 orbital wave modes, and Orb Cash-Out mastery.
-          </p>
-        </motion.div>
-
-        {/* RIGHT ANCHOR: Side Rectangular PLAY Monolith + Inverted-Triangle Tapered Stack */}
-        <div className="flex w-full max-w-[460px] flex-col items-end gap-3 justify-self-center lg:justify-self-end">
-          {/* Primary Side PLAY Monolith */}
-          <motion.button
+          <button
             type="button"
-            initial={{ opacity: 0, x: 32 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            whileHover={{ x: -8, scale: 1.015 }}
-            whileTap={{ scale: 0.97 }}
+            onClick={onEnterSongSelect}
             onMouseEnter={onHoverTick}
-            onClick={onPlayPrimary}
-            className="clip-monolith group relative flex min-h-[124px] w-full items-center justify-between overflow-hidden bg-[var(--theme-primary)] p-[2px] text-left cursor-pointer"
+            className="group flex items-center gap-3 text-right cursor-pointer bg-transparent border-0 p-0"
           >
-            <div className="clip-monolith relative flex h-full w-full items-center justify-between gap-4 bg-gradient-to-r from-[#071f17] via-[#0c2e22] to-[#0a1a14] px-6 py-5 transition-colors group-hover:from-[#0a2b20] group-hover:via-[#114231]">
-              {/* Animated Laser Scan Beam */}
-              <span
-                aria-hidden="true"
-                className="animate-laser-scan pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-transparent via-[var(--theme-bright)]/20 to-transparent"
-              />
-
-              {/* Left Accent Wedge */}
-              <span
-                aria-hidden="true"
-                className="absolute left-0 top-6 bottom-6 w-1.5 bg-[var(--theme-bright)]"
-              />
-
-              <div className="relative z-10 min-w-0 pl-2">
-                <span className="block tabular-nums text-[11px] font-extrabold tracking-[0.22em] uppercase text-[var(--theme-bright)]">
-                  {!profile.tutorialSongCompleted ? 'First Calibration' : 'Active Beatmap'}
-                </span>
-                <span className="font-display mt-0.5 block text-3xl sm:text-4xl font-black tracking-[0.16em] text-white leading-none">
-                  PLAY
-                </span>
-                <span className="mt-1.5 block truncate text-xs font-semibold text-[#d1d5db]">
-                  {playSublabel}
-                </span>
+            <div className="tabular-nums">
+              <div className="flex items-center justify-end gap-1.5 text-[9px] font-extrabold uppercase tracking-[0.22em] text-[var(--accent-bright)]">
+                <span
+                  className={`h-1.5 w-1.5 rotate-45 transition-colors duration-75 ${
+                    beatPhase === 0 ? 'bg-[var(--accent-bright)]' : 'bg-[#374052]'
+                  }`}
+                />
+                <span>Disc {activeSong.num}</span>
               </div>
-
-              <div className="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-[var(--theme-bright)] bg-[var(--theme-primary)]/20 transition-transform duration-150 group-hover:scale-110">
-                <Play className="h-7 w-7 translate-x-0.5 fill-[var(--theme-bright)] text-[var(--theme-bright)]" />
+              <div className="font-display text-xs sm:text-sm font-black tracking-wide text-[#f3f4f6] group-hover:text-[var(--accent-bright)] transition-colors">
+                {activeSong.title}
+              </div>
+              <div className="text-[10px] font-semibold text-[#9ca3af]">
+                {activeSong.bpm} BPM · NG #{activeSong.newgroundsId}
+                {activeRecord ? ` · ${activeRecord.bestRank}` : ''}
               </div>
             </div>
-          </motion.button>
+          </button>
+        </div>
 
-          {/* Tapered Inverted-Triangle Menu Stack (Widest Top -> Smallest Bottom) */}
-          <div className="flex w-full flex-col items-end gap-2.5 pt-1">
-            {menuBlades.map((blade, idx) => {
-              const Icon = blade.Icon;
-              return (
-                <motion.button
-                  key={blade.id}
-                  type="button"
-                  initial={{ opacity: 0, x: 28 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{
-                    duration: 0.34,
-                    delay: 0.08 + idx * 0.055,
-                    ease: [0.16, 1, 0.3, 1],
-                  }}
-                  whileHover={{ x: -10 }}
-                  whileTap={{ scale: 0.98 }}
-                  onMouseEnter={onHoverTick}
-                  onClick={blade.onClick}
-                  className={`clip-blade-right group relative ${blade.widthClass} bg-[#2b3446] p-[1.5px] transition-colors hover:bg-[var(--theme-primary)] cursor-pointer`}
+        {/* CENTERPIECE: CLEAN SPINNING OPTICAL DISC (LEFT) + ORBIT CREST & ANGLED RIBBON COMMANDS (RIGHT) */}
+        <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col lg:flex-row items-center justify-center gap-8 lg:gap-14">
+          {/* Clean Beat-Pulsing Optical Disc (zero overlaid text/crest clutter inside artwork) */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="relative flex items-center justify-center shrink-0"
+          >
+            <button
+              type="button"
+              onClick={onPlayPrimary}
+              onMouseEnter={() => {
+                setDiscHovered(true);
+                onHoverTick();
+              }}
+              onMouseLeave={() => setDiscHovered(false)}
+              aria-label="Play ORBIT"
+              className="group relative flex h-[230px] w-[230px] sm:h-[300px] sm:w-[300px] lg:h-[340px] lg:w-[340px] items-center justify-center rounded-full cursor-pointer bg-transparent border-0 p-0 focus:outline-none"
+            >
+              {/* Outer Rotating Precision Calibration Reticle */}
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 360 360"
+                className="animate-orbit-cw pointer-events-none absolute inset-0 h-full w-full"
+                fill="none"
+              >
+                <circle cx="180" cy="180" r="174" stroke="#222733" strokeWidth="1" />
+                <circle
+                  cx="180"
+                  cy="180"
+                  r="163"
+                  stroke="var(--accent)"
+                  strokeOpacity={beatPhase === 0 || discHovered ? 0.95 : 0.45}
+                  strokeWidth={beatPhase === 0 ? '3' : '1.75'}
+                  strokeDasharray="64 116 20 116"
+                />
+              </svg>
+
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 360 360"
+                className="animate-orbit-ccw pointer-events-none absolute inset-0 h-full w-full"
+                fill="none"
+              >
+                <circle
+                  cx="180"
+                  cy="180"
+                  r="146"
+                  stroke="#374052"
+                  strokeWidth="1"
+                  strokeDasharray="6 8"
+                />
+                <path
+                  d="M180 6 L180 26 M180 334 L180 354 M6 180 L26 180 M334 180 L354 180"
+                  stroke="var(--accent-bright)"
+                  strokeWidth="2.5"
+                />
+              </svg>
+
+              {/* Pure Spinning Track Optical Platter */}
+              <div
+                className="relative flex items-center justify-center transition-transform duration-100"
+                style={{
+                  transform: discHovered
+                    ? 'scale(1.04)'
+                    : beatPhase === 0
+                    ? 'scale(1.022)'
+                    : 'scale(1)',
+                }}
+              >
+                <DiscCartridge
+                  title={activeSong.title}
+                  num={activeSong.num}
+                  bpm={activeSong.bpm}
+                  imageUrl={activeBg}
+                  size="lg"
+                />
+
+                {/* Subtle Play Glyph only when hovering the disc */}
+                <div
+                  className={`pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-[#050608]/45 transition-opacity duration-150 ${
+                    discHovered ? 'opacity-100' : 'opacity-0'
+                  }`}
                 >
-                  <div className="clip-blade-right relative flex items-center justify-between gap-3 bg-[#0c1017]/95 px-5 py-3 transition-colors group-hover:bg-[#111923]">
-                    {/* Glowing Left Accent Bar on Hover */}
-                    <span
-                      aria-hidden="true"
-                      className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--theme-bright)] opacity-0 transition-opacity group-hover:opacity-100"
-                    />
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full border border-[var(--accent-bright)] bg-[#06130e]">
+                    <Play className="h-6 w-6 translate-x-0.5 fill-[var(--accent-bright)] text-[var(--accent-bright)]" />
+                  </span>
+                </div>
+              </div>
+            </button>
+          </motion.div>
 
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Icon className={`h-4 w-4 shrink-0 ${blade.accent}`} />
-                      <span className="font-display text-xs sm:text-sm font-black tracking-[0.14em] uppercase text-[#f3f4f6] whitespace-nowrap">
-                        {blade.label}
-                      </span>
+          {/* RIGHT COMMAND COLUMN: ORBIT Crest Header + Clean Stepped Angled Ribbons */}
+          <div className="relative z-10 flex w-full max-w-[460px] flex-col items-start">
+            {/* Wordmark + Symmetrical Ornamental Crest */}
+            <div className="mb-4 w-full">
+              <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-[0.24em] text-[var(--accent-bright)] tabular-nums">
+                <span>Precision Rhythm Calibration</span>
+                <span className="text-[#9ca3af]">1.0X Sync</span>
+              </div>
+              <h1 className="font-display mt-1 text-5xl sm:text-6xl font-black tracking-[0.26em] text-white leading-none">
+                ORBIT
+              </h1>
+              <OrbitOrnamentalCrest className="mt-1.5 w-64 sm:w-72 opacity-85" />
+            </div>
+
+            {/* Stepped Angled Ribbon Stack */}
+            <div className="flex w-full flex-col items-start gap-2">
+              {ribbonActions.map((item, idx) => {
+                const Icon = item.Icon;
+                return (
+                  <motion.button
+                    key={item.id}
+                    type="button"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: 0.28,
+                      delay: 0.04 + idx * 0.045,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    whileHover={{ x: 8 }}
+                    whileTap={{ scale: 0.985 }}
+                    onMouseEnter={onHoverTick}
+                    onClick={item.onClick}
+                    className={`tactile-key clip-ribbon-right group relative ${item.widthClass} ${item.indentClass} ${item.borderClass} p-[1.5px] text-left cursor-pointer transition-colors`}
+                  >
+                    <div
+                      className={`clip-ribbon-right relative flex w-full items-center justify-between gap-4 ${item.innerClass} ${
+                        item.primary ? 'py-3.5 pl-5 pr-8' : 'py-2.5 pl-5 pr-7'
+                      } transition-colors`}
+                    >
+                      {item.primary && (
+                        <span
+                          aria-hidden="true"
+                          className="animate-laser-scan pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-transparent via-[var(--accent-bright)]/18 to-transparent"
+                        />
+                      )}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Icon
+                          className={`shrink-0 ${
+                            item.primary
+                              ? 'h-5 w-5 fill-[var(--accent-bright)] text-[var(--accent-bright)]'
+                              : `h-4 w-4 ${item.metaClass}`
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <span
+                            className={`font-display block font-black tracking-[0.16em] uppercase whitespace-nowrap leading-none ${
+                              item.primary ? 'text-xl sm:text-2xl' : 'text-xs sm:text-sm'
+                            } ${item.labelClass}`}
+                          >
+                            {item.label}
+                          </span>
+                          {item.primary && (
+                            <span className="mt-1 block truncate text-[11px] font-semibold text-[#d1d5db]">
+                              {item.meta}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {!item.primary && (
+                        <span
+                          className={`tabular-nums text-[11px] font-bold whitespace-nowrap shrink-0 ${item.metaClass}`}
+                        >
+                          {item.meta}
+                        </span>
+                      )}
                     </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-                    <span className="tabular-nums text-[11px] font-bold text-[#9ca3af] group-hover:text-white whitespace-nowrap shrink-0">
-                      {blade.meta}
-                    </span>
-                  </div>
-                </motion.button>
-              );
-            })}
+        {/* BOTTOM SATELLITE UTILITY ROW */}
+        <div className="relative z-20 flex w-full flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#6b7280]">
+            <span className="text-[var(--accent-bright)]">Click Disc or PLAY</span>
+            <span aria-hidden="true">·</span>
+            <span className="hidden sm:inline">Pure 1.0x Audio · Orb Cash-Out System</span>
+          </div>
+
+          <div className="flex items-center gap-2.5 tabular-nums">
+            <span className="hidden sm:inline text-[9px] font-bold uppercase tracking-[0.2em] text-[#6b7280]">
+              Triggers
+            </span>
+            <button
+              type="button"
+              data-pressed={pressedKey === 'k1'}
+              onMouseDown={() => {
+                setPressedKey('k1');
+                onHoverTick();
+              }}
+              onMouseUp={() => setPressedKey(null)}
+              onMouseLeave={() => setPressedKey(null)}
+              className="tactile-key clip-hex flex h-9 min-w-[68px] items-center justify-center bg-[#2d3648] p-[1px] data-[pressed=true]:bg-[var(--accent-bright)] cursor-pointer"
+            >
+              <span className="clip-hex flex h-full w-full items-center justify-center bg-[#0d1118] px-3 text-[10px] font-black text-[#f3f4f6]">
+                {profile.trigger1Label}
+              </span>
+            </button>
+            <button
+              type="button"
+              data-pressed={pressedKey === 'k2'}
+              onMouseDown={() => {
+                setPressedKey('k2');
+                onHoverTick();
+              }}
+              onMouseUp={() => setPressedKey(null)}
+              onMouseLeave={() => setPressedKey(null)}
+              className="tactile-key clip-hex flex h-9 min-w-[68px] items-center justify-center bg-[#2d3648] p-[1px] data-[pressed=true]:bg-[var(--accent-bright)] cursor-pointer"
+            >
+              <span className="clip-hex flex h-full w-full items-center justify-center bg-[#0d1118] px-3 text-[10px] font-black text-[#f3f4f6]">
+                {profile.trigger2Label}
+              </span>
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  },
+);

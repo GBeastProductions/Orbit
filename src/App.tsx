@@ -32,6 +32,7 @@ import {
   signedAngleDiff,
   wrapAngle,
 } from './engine/beatmap';
+import { orbitEvents } from './engine/gameEvents';
 import { INITIAL_PROFILE, loadProfile, saveProfile } from './store/profileStore';
 import {
   BeatmapNote,
@@ -107,6 +108,7 @@ interface RuntimeEngine {
   missCount: number;
   runOffsetDegSum: number;
   runHitCount: number;
+  runOffsetSamples: number[];
   // Tutorial & Cinematic (dial-only slow-mo, song stays 1.0x)
   isTutorialRun: boolean;
   tutorialLives: number;
@@ -121,6 +123,13 @@ interface RuntimeEngine {
   sandboxModeId: WaveModeId | null;
   beatPulse: number;
   activeBeatLed: number;
+  // Buffered career telemetry flushed on pause/run-end to prevent mid-song localStorage frame hitches
+  pendingHits: number;
+  pendingPerfects: number;
+  pendingOffsetDegSum: number;
+  pendingMisses: number;
+  pendingEarlyMisses: number;
+  pendingLateMisses: number;
 }
 
 function formatKeyLabel(e: KeyboardEvent): string {
@@ -177,6 +186,7 @@ export default function App() {
   orbShopOpenRef.current = orbShopOpen;
   const phaseBeforeOverlayRef = useRef<GamePhase>('IDLE');
   const lastInputTimestampRef = useRef(0);
+  const lastTutorialStripeRef = useRef(false);
 
   const engineRef = useRef<RuntimeEngine>({
     phase: 'IDLE',
@@ -217,6 +227,7 @@ export default function App() {
     missCount: 0,
     runOffsetDegSum: 0,
     runHitCount: 0,
+    runOffsetSamples: [],
     isTutorialRun: false,
     tutorialLives: 3,
     shownLessonIds: new Set<string>(),
@@ -230,6 +241,12 @@ export default function App() {
     sandboxModeId: null,
     beatPulse: 0,
     activeBeatLed: -1,
+    pendingHits: 0,
+    pendingPerfects: 0,
+    pendingOffsetDegSum: 0,
+    pendingMisses: 0,
+    pendingEarlyMisses: 0,
+    pendingLateMisses: 0,
   });
 
   const canvasStateRef = useRef<CanvasRenderState>({
@@ -252,7 +269,11 @@ export default function App() {
     missSignedSpan: 0,
     dialVisualAlpha: 1,
     bassEnergy: 0,
+    spectrumBins: new Float32Array(36),
     beatPulse: 0,
+    streak: 0,
+    songProgressRatio: 0,
+    songSections: [],
     songSection: 'INTRO',
     lessonSlowActive: false,
     activeLesson: null,
@@ -265,6 +286,10 @@ export default function App() {
     document.documentElement.style.setProperty('--theme-bright', t.bright);
     document.documentElement.style.setProperty('--theme-dim', t.dim);
     document.documentElement.style.setProperty('--theme-on-primary', t.onPrimary);
+    document.documentElement.style.setProperty('--accent', t.primary);
+    document.documentElement.style.setProperty('--accent-bright', t.bright);
+    document.documentElement.style.setProperty('--accent-dim', t.dim);
+    document.documentElement.style.setProperty('--accent-on', t.onPrimary);
   }, [profile.theme]);
 
   const updateProfile = useCallback((updater: Partial<PlayerProfile> | ((p: PlayerProfile) => PlayerProfile)) => {
@@ -274,6 +299,40 @@ export default function App() {
       return next;
     });
   }, []);
+
+  const flushRunProfileDeltas = useCallback(() => {
+    const eng = engineRef.current;
+    if (
+      eng.pendingHits === 0 &&
+      eng.pendingPerfects === 0 &&
+      eng.pendingMisses === 0 &&
+      eng.pendingOffsetDegSum === 0
+    ) {
+      return;
+    }
+    const hits = eng.pendingHits;
+    const perfects = eng.pendingPerfects;
+    const offsetSum = eng.pendingOffsetDegSum;
+    const misses = eng.pendingMisses;
+    const early = eng.pendingEarlyMisses;
+    const late = eng.pendingLateMisses;
+    eng.pendingHits = 0;
+    eng.pendingPerfects = 0;
+    eng.pendingOffsetDegSum = 0;
+    eng.pendingMisses = 0;
+    eng.pendingEarlyMisses = 0;
+    eng.pendingLateMisses = 0;
+
+    updateProfile((prev) => ({
+      ...prev,
+      totalHits: prev.totalHits + hits,
+      totalPerfects: prev.totalPerfects + perfects,
+      offsetDegSum: prev.offsetDegSum + offsetSum,
+      totalMisses: prev.totalMisses + misses,
+      earlyMisses: prev.earlyMisses + early,
+      lateMisses: prev.lateMisses + late,
+    }));
+  }, [updateProfile]);
 
   const getActiveSong = useCallback(
     (p: PlayerProfile = profileRef.current, list: SongDefinition[] = songsRef.current) => {
@@ -397,15 +456,35 @@ export default function App() {
         audioEngine.playLevelClear(p.soundEnabled);
       }
 
-      updateProfile({
+      const hitsDelta = eng.pendingHits;
+      const perfectsDelta = eng.pendingPerfects;
+      const offsetDelta = eng.pendingOffsetDegSum;
+      const missesDelta = eng.pendingMisses;
+      const earlyDelta = eng.pendingEarlyMisses;
+      const lateDelta = eng.pendingLateMisses;
+      eng.pendingHits = 0;
+      eng.pendingPerfects = 0;
+      eng.pendingOffsetDegSum = 0;
+      eng.pendingMisses = 0;
+      eng.pendingEarlyMisses = 0;
+      eng.pendingLateMisses = 0;
+
+      updateProfile((prev) => ({
+        ...prev,
         tutorialSongCompleted: nextTutorialDone,
         orbs: nextOrbs,
         totalOrbsEarned: nextTotalOrbs,
         songRecords: nextRecords,
         tierBestScores: nextTierBests,
-        bestScore: Math.max(p.bestScore, eng.sandboxModeId ? 0 : eng.score),
-        bestStreak: Math.max(p.bestStreak, eng.maxStreakInRun),
-      });
+        bestScore: Math.max(prev.bestScore, eng.sandboxModeId ? 0 : eng.score),
+        bestStreak: Math.max(prev.bestStreak, eng.maxStreakInRun),
+        totalHits: prev.totalHits + hitsDelta,
+        totalPerfects: prev.totalPerfects + perfectsDelta,
+        offsetDegSum: prev.offsetDegSum + offsetDelta,
+        totalMisses: prev.totalMisses + missesDelta,
+        earlyMisses: prev.earlyMisses + earlyDelta,
+        lateMisses: prev.lateMisses + lateDelta,
+      }));
 
       const summary: RunSummaryData = {
         cleared,
@@ -414,6 +493,7 @@ export default function App() {
         artist: song.artist,
         difficulty: diffId,
         score: eng.score,
+        previousBestScore: prevRec?.bestScore || 0,
         maxCombo: eng.maxStreakInRun,
         accuracy,
         rank,
@@ -423,6 +503,7 @@ export default function App() {
         goodCount: eng.goodCount,
         missCount: eng.missCount,
         avgOffsetDeg,
+        offsetSamples: [...eng.runOffsetSamples],
         unbankedOrbs: eng.unbankedOrbs,
         rankBonusOrbs,
         cashedOutOrbs,
@@ -431,6 +512,8 @@ export default function App() {
         missDegrees: cleared ? undefined : eng.missDegrees,
         isNewBest,
       };
+
+      orbitEvents.emit('onRunComplete', summary);
 
       // Special First-Run Tutorial Completion Spin-Fade Cinematic before showing Summary
       if (cleared && song.id === 'moments_passing' && !p.tutorialSongCompleted && !eng.sandboxModeId) {
@@ -490,9 +573,16 @@ export default function App() {
       eng.angularSpeed = eng.baseAngularSpeed;
 
       const baseHW = getBaseHalfWidth(diffId, p.equippedMods);
-      const minOff = modeId === 'CASCADE_CHAIN' ? 1.15 : isFirstNote ? 1.65 : 1.45;
-      const maxOff = modeId === 'CASCADE_CHAIN' ? 1.85 : 4.65;
-      const primaryOffset = minOff + Math.random() * (maxOff - minOff);
+      let primaryOffset: number;
+      if (modeId === 'CASCADE_CHAIN') {
+        primaryOffset = 1.05 + Math.random() * 0.65;
+      } else if (note && !eng.sandboxModeId) {
+        const beatTravel = note.stepSec * eng.baseAngularSpeed;
+        primaryOffset = Math.max(1.0, Math.min(5.05, beatTravel * (0.94 + Math.random() * 0.12)));
+      } else {
+        const minOff = isFirstNote ? 1.65 : 1.45;
+        primaryOffset = minOff + Math.random() * (4.55 - minOff);
+      }
       const primaryAngle = wrapAngle(eng.spinnerAngle + eng.direction * primaryOffset);
 
       if (modeId === 'MULTI_CLUSTER') {
@@ -596,6 +686,7 @@ export default function App() {
       const eng = engineRef.current;
 
       setSummaryData(null);
+      lastTutorialStripeRef.current = false;
       setShowTutorialCompleteStripe(false);
 
       eng.sandboxModeId = sandboxMode;
@@ -632,10 +723,12 @@ export default function App() {
       eng.missCount = 0;
       eng.runOffsetDegSum = 0;
       eng.runHitCount = 0;
+      eng.runOffsetSamples = [];
 
       eng.beatmap = buildSongBeatmap(song, diffId, p.equippedMods);
       eng.beatmapIndex = 0;
       eng.phase = autoStart ? 'PLAYING' : 'IDLE';
+      orbitEvents.emit('onTrackChange', { songId: song.id, title: song.title, difficulty: diffId });
 
       setUiScore(0);
       setUiStreak(0);
@@ -678,7 +771,7 @@ export default function App() {
     [getActiveSong, getEffectiveDifficulty, spawnNextWave],
   );
 
-  // Initial setup + preload active song buffer
+  // Initial setup + preload active song buffer + silent first-gesture WebAudio unlock
   useEffect(() => {
     resetRound(false, null);
     const active = getActiveSong();
@@ -689,15 +782,30 @@ export default function App() {
         );
       }
     });
+
+    const handleFirstUnlock = () => {
+      const p = profileRef.current;
+      audioEngine.unlock();
+      audioEngine.updateVolumes(p.musicEnabled, p.musicVolume, p.soundEnabled, p.sfxVolume);
+    };
+    window.addEventListener('pointerdown', handleFirstUnlock, { passive: true, once: true });
+    window.addEventListener('keydown', handleFirstUnlock, { passive: true, once: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstUnlock);
+      window.removeEventListener('keydown', handleFirstUnlock);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    const onBeforeUnload = () => flushRunProfileDeltas();
+    window.addEventListener('beforeunload', onBeforeUnload);
     return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
       warpTimersRef.current.forEach((id) => window.clearTimeout(id));
       warpTimersRef.current = [];
     };
-  }, []);
+  }, [flushRunProfileDeltas]);
 
   const triggerMiss = useCallback(
     (reasonText: string, targetRef?: TargetSector) => {
@@ -771,20 +879,22 @@ export default function App() {
         });
         if (eng.hitErrorTicks.length > 16) eng.hitErrorTicks.shift();
 
-        updateProfile((prev) => ({
-          ...prev,
-          totalMisses: prev.totalMisses + 1,
-          earlyMisses: prev.earlyMisses + (isEarly ? 1 : 0),
-          lateMisses: prev.lateMisses + (isEarly ? 0 : 1),
-        }));
+        eng.pendingMisses += 1;
+        if (isEarly) eng.pendingEarlyMisses += 1;
+        else eng.pendingLateMisses += 1;
       }
 
       eng.missReason = reasonText;
       eng.shakeTime = 0.34;
       eng.shakeAmplitude = 11;
+      orbitEvents.emit('onMiss', {
+        reason: reasonText,
+        degrees: eng.missDegrees,
+        songId: getActiveSong(p).id,
+      });
       finalizeRunSummary(false);
     },
-    [finalizeRunSummary, spawnNextWave, updateProfile],
+    [finalizeRunSummary, getActiveSong, spawnNextWave],
   );
 
   const handleTriggerAction = useCallback(() => {
@@ -913,11 +1023,27 @@ export default function App() {
     const offsetDeg = bestAbsDelta * (180 / Math.PI);
     eng.runOffsetDegSum += offsetDeg;
     eng.runHitCount += 1;
+    eng.runOffsetSamples.push(offsetSigned);
 
     if (p.equippedMods.includes('SH') && eng.streak % 12 === 0 && eng.shields < 2) {
       eng.shields += 1;
       setUiShields(eng.shields);
     }
+
+    // Escalating Combo Milestone Hooks & Harmonic Chimes (25x, 50x, 100x)
+    if (eng.streak === 25 || eng.streak === 50 || eng.streak === 100) {
+      const mTier: 1 | 2 | 3 = eng.streak === 100 ? 3 : eng.streak === 50 ? 2 : 1;
+      audioEngine.playComboMilestone(p.soundEnabled, mTier);
+      orbitEvents.emit('onComboMilestone', { streak: eng.streak, tier: mTier });
+    }
+
+    orbitEvents.emit('onHit', {
+      tier,
+      streak: eng.streak,
+      points: pts,
+      offsetSigned,
+      songId: song.id,
+    });
 
     audioEngine.playHit(p.soundEnabled, p.hitSfxMode, eng.streak, isPerfect, song.scaleNotes);
     eng.hitEffects.push({
@@ -937,12 +1063,9 @@ export default function App() {
     setUiScore(eng.score);
     setUiStreak(eng.streak);
 
-    updateProfile((prev) => ({
-      ...prev,
-      totalHits: prev.totalHits + 1,
-      totalPerfects: prev.totalPerfects + (isPerfect ? 1 : 0),
-      offsetDegSum: prev.offsetDegSum + offsetDeg,
-    }));
+    eng.pendingHits += 1;
+    if (isPerfect) eng.pendingPerfects += 1;
+    eng.pendingOffsetDegSum += offsetDeg;
 
     if (eng.targets.length > 0) return;
 
@@ -954,7 +1077,6 @@ export default function App() {
     resetRound,
     spawnNextWave,
     triggerMiss,
-    updateProfile,
   ]);
 
   // Main Fixed-Cap 60fps Update Loop
@@ -1001,6 +1123,7 @@ export default function App() {
         eng.activeBeatLed = ledIdx;
         eng.beatPulse = 0.85;
         setUiBeatLed(ledIdx);
+        orbitEvents.emit('onBeat', { beatIndex: ledIdx, bpm: song.bpm, songId: song.id });
       }
 
       // Post-Tutorial Spin-Fade Cinematic
@@ -1024,11 +1147,17 @@ export default function App() {
         }
 
         const stripeActive = t >= 0.65 && t < 2.15;
-        setShowTutorialCompleteStripe(stripeActive);
+        if (stripeActive !== lastTutorialStripeRef.current) {
+          lastTutorialStripeRef.current = stripeActive;
+          setShowTutorialCompleteStripe(stripeActive);
+        }
         eng.spinnerAngle = wrapAngle(eng.spinnerAngle + (eng.angularSpeed + eng.dialSpinBoost) * dt);
 
         if (t >= 2.75) {
-          setShowTutorialCompleteStripe(false);
+          if (lastTutorialStripeRef.current) {
+            lastTutorialStripeRef.current = false;
+            setShowTutorialCompleteStripe(false);
+          }
           eng.dialVisualAlpha = 1;
           eng.dialSpinBoost = 0;
           eng.phase = 'SUMMARY';
@@ -1176,7 +1305,15 @@ export default function App() {
       cs.missReasonText = eng.missReason;
       cs.dialVisualAlpha = eng.dialVisualAlpha;
       cs.bassEnergy = p.bgFxMode === 'dynamic' ? audioEngine.getBassEnergy() : 0;
+      if (p.bgFxMode === 'dynamic') {
+        audioEngine.getSpectrumBins(cs.spectrumBins);
+      } else {
+        cs.spectrumBins.fill(0);
+      }
       cs.beatPulse = eng.beatPulse;
+      cs.streak = eng.streak;
+      cs.songProgressRatio = eng.songTime / Math.max(1, song.durationSec);
+      cs.songSections = song.sections;
       cs.songSection = eng.songSection;
       cs.lessonSlowActive = eng.lessonSlowActive;
       cs.activeLesson = eng.activeLesson;
@@ -1189,21 +1326,25 @@ export default function App() {
   }, [finalizeRunSummary, getActiveSong, resetRound, triggerMiss]);
 
   // Overlay Management
-  const openPause = useCallback((tab: PauseTabId = 'main') => {
-    setModsOpen(false);
-    setOrbShopOpen(false);
-    if (!pauseOpenRef.current) {
-      phaseBeforeOverlayRef.current =
-        screenRef.current === 'PLAYING' ? engineRef.current.phase : 'IDLE';
-      if (screenRef.current === 'PLAYING' && engineRef.current.phase === 'PLAYING') {
-        engineRef.current.phase = 'PAUSED';
-        setUiPhase('PAUSED');
-        audioEngine.stop();
+  const openPause = useCallback(
+    (tab: PauseTabId = 'main') => {
+      flushRunProfileDeltas();
+      setModsOpen(false);
+      setOrbShopOpen(false);
+      if (!pauseOpenRef.current) {
+        phaseBeforeOverlayRef.current =
+          screenRef.current === 'PLAYING' ? engineRef.current.phase : 'IDLE';
+        if (screenRef.current === 'PLAYING' && engineRef.current.phase === 'PLAYING') {
+          engineRef.current.phase = 'PAUSED';
+          setUiPhase('PAUSED');
+          audioEngine.stop();
+        }
       }
-    }
-    setPauseTab(tab);
-    setPauseOpen(true);
-  }, []);
+      setPauseTab(tab);
+      setPauseOpen(true);
+    },
+    [flushRunProfileDeltas],
+  );
 
   const closePause = useCallback(
     (startSelectedSong = false) => {
@@ -1242,6 +1383,7 @@ export default function App() {
   );
 
   const openMods = useCallback(() => {
+    flushRunProfileDeltas();
     setPauseOpen(false);
     setOrbShopOpen(false);
     if (!modsOpenRef.current) {
@@ -1254,7 +1396,7 @@ export default function App() {
       }
     }
     setModsOpen(true);
-  }, []);
+  }, [flushRunProfileDeltas]);
 
   const closeMods = useCallback(() => {
     setModsOpen(false);
@@ -1278,6 +1420,7 @@ export default function App() {
   }, [getActiveSong]);
 
   const openOrbVault = useCallback(() => {
+    flushRunProfileDeltas();
     setPauseOpen(false);
     setModsOpen(false);
     if (!orbShopOpenRef.current) {
@@ -1290,7 +1433,7 @@ export default function App() {
       }
     }
     setOrbShopOpen(true);
-  }, []);
+  }, [flushRunProfileDeltas]);
 
   const closeOrbVault = useCallback(() => {
     setOrbShopOpen(false);
@@ -1382,6 +1525,7 @@ export default function App() {
 
   // Screen Navigation Helpers
   const enterSongSelect = useCallback(() => {
+    flushRunProfileDeltas();
     setSummaryData(null);
     setPauseOpen(false);
     setModsOpen(false);
@@ -1391,9 +1535,10 @@ export default function App() {
     setScreen('SONG_SELECT');
     const active = getActiveSong();
     startSongPreview(active);
-  }, [getActiveSong, startSongPreview]);
+  }, [flushRunProfileDeltas, getActiveSong, startSongPreview]);
 
   const returnToTitle = useCallback(() => {
+    flushRunProfileDeltas();
     audioEngine.stop();
     setSummaryData(null);
     setPauseOpen(false);
@@ -1402,7 +1547,7 @@ export default function App() {
     engineRef.current.phase = 'IDLE';
     setUiPhase('IDLE');
     setScreen('TITLE');
-  }, []);
+  }, [flushRunProfileDeltas]);
 
   const launchGameplay = useCallback(
     (songOverride?: SongDefinition, diffOverride?: DifficultyId) => {
@@ -1419,8 +1564,10 @@ export default function App() {
   const launchWithZoomWarp = useCallback(
     (song: SongDefinition, diff: DifficultyId, label: string) => {
       if (warpTimersRef.current.length > 0) return;
+      const p = profileRef.current;
       audioEngine.ensureContext();
-      audioEngine.playUiLaunch(profileRef.current.soundEnabled);
+      audioEngine.updateVolumes(p.musicEnabled, p.musicVolume, p.soundEnabled, p.sfxVolume);
+      audioEngine.playUiLaunch(p.soundEnabled);
       setWarpLaunchLabel(label.toUpperCase());
 
       const tSwitch = window.setTimeout(() => {
@@ -1650,7 +1797,6 @@ export default function App() {
   // Derived UI Values
   const activeSong = getActiveSong();
   const activeDifficulty = getEffectiveDifficulty(profile, activeSong);
-  const star = activeSong.stars[activeDifficulty] || activeSong.stars.CHILL || '1.2★';
   const streakMult = getStreakMultiplier(uiStreak);
   const totalMult = computeTotalMultiplier(activeDifficulty, profile.equippedMods, uiStreak);
   const modeMeta = getWaveModeMeta(uiWaveMode);
@@ -1685,8 +1831,8 @@ export default function App() {
         defaultImageUrl={activeSong.bgImageUrl}
         levelSetting={activeLevelBg}
         bgFxMode={profile.bgFxMode}
-        forceDimPct={screen === 'TITLE' ? 76 : undefined}
-        forceBlurPx={screen === 'TITLE' ? 6 : undefined}
+        forceDimPct={screen === 'TITLE' ? 62 : screen === 'SONG_SELECT' ? 40 : undefined}
+        forceBlurPx={screen === 'TITLE' ? 3 : screen === 'SONG_SELECT' ? 2 : undefined}
       />
 
       {screen === 'TITLE' && (
@@ -1718,6 +1864,11 @@ export default function App() {
           onOpenOrbVault={openOrbVault}
           onOpenSettings={() => openPause('ctrl')}
           onOpenIndex={() => openPause('index')}
+          onToggleMusic={() => {
+            const next = !profile.musicEnabled;
+            updateProfile({ musicEnabled: next });
+            audioEngine.updateVolumes(next, profile.musicVolume, profile.soundEnabled, profile.sfxVolume);
+          }}
           onHoverTick={() => audioEngine.playUiTick(profileRef.current.soundEnabled)}
         />
       )}
@@ -1732,6 +1883,24 @@ export default function App() {
             const song = songs.find((s) => s.id === songId) || songs[0];
             updateProfile({ selectedSongId: songId });
             startSongPreview(song);
+          }}
+          onRandomSong={() => {
+            const unlockedPool = songs.filter(
+              (s) =>
+                s.id !== activeSong.id &&
+                (profile.devUnlocked || profile.unlockedSongs.includes(s.id)),
+            );
+            const pool = unlockedPool.length > 0 ? unlockedPool : songs;
+            const pick = pool[Math.floor(Math.random() * pool.length)] || songs[0];
+            updateProfile({ selectedSongId: pick.id });
+            startSongPreview(pick);
+          }}
+          onToggleMusic={() => {
+            const next = !profile.musicEnabled;
+            updateProfile({ musicEnabled: next });
+            audioEngine.updateVolumes(next, profile.musicVolume, profile.soundEnabled, profile.sfxVolume);
+            if (next) startSongPreview(activeSong, { ...profile, musicEnabled: true });
+            else audioEngine.stop();
           }}
           onSelectDifficulty={(diffId) => {
             updateProfile({ selectedDifficulty: diffId });
@@ -1757,16 +1926,17 @@ export default function App() {
       )}
 
       {screen === 'PLAYING' && (
-        <div className="relative z-10 grid h-dvh w-full grid-rows-[54px_1fr]">
+        <div className="relative z-10 grid h-dvh w-full grid-rows-[52px_1fr]">
           <TopBar
             activeSong={activeSong}
             activeDifficulty={activeDifficulty}
             unlockedDiffs={profile.unlockedDiffs}
             devUnlocked={profile.devUnlocked}
             equippedModsCount={profile.equippedMods.length}
-            totalMultiplier={totalMult}
             orbs={profile.orbs}
             beatLedIndex={uiBeatLed}
+            songTimerText={`${formatTimeSec(uiSongTime)} / ${formatTimeSec(activeSong.durationSec)} · ${uiSection}`}
+            songProgressPct={progressPct}
             onBackToSongSelect={enterSongSelect}
             onSelectDifficulty={(diffId) => {
               updateProfile({ selectedDifficulty: diffId });
@@ -1779,13 +1949,12 @@ export default function App() {
 
           <OrbitStage
             renderStateRef={canvasStateRef}
+            phase={uiPhase}
             themeId={profile.theme}
             bgFxMode={profile.bgFxMode}
             allowPointerTap={profile.allowPointerTap}
             onTriggerTap={handleTriggerAction}
-            songHudTitle={`${activeSong.title.toUpperCase()} (${activeSong.artist}) · ${activeDifficulty} ${star}`}
             songTimerText={`${formatTimeSec(uiSongTime)} / ${formatTimeSec(activeSong.durationSec)} · ${uiSection}`}
-            songProgressPct={progressPct}
             score={uiScore}
             streak={uiStreak}
             bestScore={profile.songRecords[activeSong.id]?.bestScore || 0}
@@ -1800,6 +1969,10 @@ export default function App() {
             activeLesson={uiActiveLesson}
             showTutorialCompleteStripe={showTutorialCompleteStripe}
             promptHint={promptHint}
+            trigger1Code={profile.trigger1Code}
+            trigger1Label={profile.trigger1Label}
+            trigger2Code={profile.trigger2Code}
+            trigger2Label={profile.trigger2Label}
             onSkipTutorial={() => {
               const eng = engineRef.current;
               eng.tutorialGuideDisabled = true;

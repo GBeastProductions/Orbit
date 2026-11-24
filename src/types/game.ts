@@ -220,6 +220,14 @@ export interface PlayerProfile {
   lateMisses: number;
 }
 
+export interface MilestoneForecast {
+  currentRank: LetterRank;
+  nextRank: LetterRank | null;
+  gapLabel: string;
+  progressPct: number;
+  potentialBonusOrbs: number;
+}
+
 export interface RunSummaryData {
   cleared: boolean;
   songId: string;
@@ -227,6 +235,7 @@ export interface RunSummaryData {
   artist: string;
   difficulty: DifficultyId;
   score: number;
+  previousBestScore: number;
   maxCombo: number;
   accuracy: number;
   rank: LetterRank;
@@ -236,6 +245,7 @@ export interface RunSummaryData {
   goodCount: number;
   missCount: number;
   avgOffsetDeg: number;
+  offsetSamples: number[];
   unbankedOrbs: number;
   rankBonusOrbs: number;
   cashedOutOrbs: number;

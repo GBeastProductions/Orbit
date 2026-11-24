@@ -4,6 +4,7 @@ import {
   DifficultyId,
   JudgmentTier,
   LetterRank,
+  MilestoneForecast,
   ModCode,
   SongDefinition,
   SongSection,
@@ -100,6 +101,97 @@ export function computeRankOrbBonus(rank: LetterRank, diffId: DifficultyId): num
   if (rank === 'A') return Math.round(6 * tierScale);
   if (rank === 'B') return Math.round(3 * tierScale);
   return 0;
+}
+
+/**
+ * Zeigarnik proximity calculator — computes exact distance to the next rank & Orb milestone.
+ */
+export function computeNextMilestone(
+  accuracy: number,
+  missCount: number,
+  cleared: boolean,
+  diffId: DifficultyId,
+): MilestoneForecast {
+  const rank = computeLetterRank(accuracy, missCount, cleared);
+  const accClamped = Math.max(0, Math.min(100, accuracy));
+
+  if (!cleared || rank === 'F' || rank === 'D') {
+    const gap = Math.max(0.1, 62 - accClamped);
+    return {
+      currentRank: rank,
+      nextRank: 'C',
+      gapLabel: !cleared
+        ? 'Survive to finish with C-Rank+ (62% Acc) to unlock Orb Cash-Out'
+        : `${gap.toFixed(1)}% accuracy away from C-Rank Orb Cash-Out`,
+      progressPct: Math.min(98, (accClamped / 62) * 100),
+      potentialBonusOrbs: computeRankOrbBonus('B', diffId),
+    };
+  }
+
+  if (rank === 'C') {
+    const gap = Math.max(0.1, 76 - accClamped);
+    const bonus = computeRankOrbBonus('B', diffId);
+    return {
+      currentRank: 'C',
+      nextRank: 'B',
+      gapLabel: `${gap.toFixed(1)}% away from B-Rank (+${bonus} Bonus Orbs)`,
+      progressPct: Math.min(99, ((accClamped - 62) / (76 - 62)) * 100),
+      potentialBonusOrbs: bonus,
+    };
+  }
+
+  if (rank === 'B') {
+    const gap = Math.max(0.1, 88 - accClamped);
+    const bonus = computeRankOrbBonus('A', diffId);
+    return {
+      currentRank: 'B',
+      nextRank: 'A',
+      gapLabel: `${gap.toFixed(1)}% away from A-Rank (+${bonus} Bonus Orbs)`,
+      progressPct: Math.min(99, ((accClamped - 76) / (88 - 76)) * 100),
+      potentialBonusOrbs: bonus,
+    };
+  }
+
+  if (rank === 'A') {
+    const bonus = computeRankOrbBonus('S', diffId);
+    if (missCount > 0 && accClamped >= 95) {
+      return {
+        currentRank: 'A',
+        nextRank: 'S',
+        gapLabel: `Full Combo (0 misses) needed for S-Rank (+${bonus} Bonus Orbs)`,
+        progressPct: 92,
+        potentialBonusOrbs: bonus,
+      };
+    }
+    const gap = Math.max(0.1, 95 - accClamped);
+    return {
+      currentRank: 'A',
+      nextRank: 'S',
+      gapLabel: `${gap.toFixed(1)}%${missCount > 0 ? ' & Full Combo' : ''} away from S-Rank (+${bonus} Orbs)`,
+      progressPct: Math.min(99, ((accClamped - 88) / (95 - 88)) * 100),
+      potentialBonusOrbs: bonus,
+    };
+  }
+
+  if (rank === 'S') {
+    const gap = Math.max(0.05, 99.5 - accClamped);
+    const bonus = computeRankOrbBonus('SS', diffId);
+    return {
+      currentRank: 'S',
+      nextRank: 'SS',
+      gapLabel: `${gap.toFixed(2)}% away from SS-Rank (+${bonus} Bonus Orbs)`,
+      progressPct: Math.min(99, ((accClamped - 95) / (99.5 - 95)) * 100),
+      potentialBonusOrbs: bonus,
+    };
+  }
+
+  return {
+    currentRank: 'SS',
+    nextRank: null,
+    gapLabel: 'Apex SS Calibration Achieved — Maximum Orb Payout',
+    progressPct: 100,
+    potentialBonusOrbs: computeRankOrbBonus('SS', diffId),
+  };
 }
 
 export function getSectionAtProgress(song: SongDefinition, prog: number): SongSection {

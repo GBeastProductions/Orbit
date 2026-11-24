@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Pause, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Coins, Lock, Pause, SlidersHorizontal } from 'lucide-react';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/catalog';
 import { DifficultyId, SongDefinition } from '../types/game';
 
@@ -10,9 +10,11 @@ interface TopBarProps {
   devUnlocked: boolean;
   equippedModsCount: number;
   totalMultiplier: number;
+  orbs: number;
   beatLedIndex: number;
-  onOpenTracks: () => void;
+  onBackToSongSelect: () => void;
   onSelectDifficulty: (diffId: DifficultyId) => void;
+  onOpenOrbVault: () => void;
   onOpenMods: () => void;
   onOpenPause: () => void;
 }
@@ -24,9 +26,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   devUnlocked,
   equippedModsCount,
   totalMultiplier,
+  orbs,
   beatLedIndex,
-  onOpenTracks,
+  onBackToSongSelect,
   onSelectDifficulty,
+  onOpenOrbVault,
   onOpenMods,
   onOpenPause,
 }) => {
@@ -46,13 +50,24 @@ export const TopBar: React.FC<TopBarProps> = ({
   const currentDiff = DIFFICULTIES[activeDifficulty] || DIFFICULTIES.CHILL;
 
   return (
-    <header className="flex h-[54px] items-center justify-between gap-4 border-b border-[#222733] bg-[#050608] px-4 sm:px-6 z-20">
-      {/* Zone 1: Brand + Active Track Trigger */}
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="flex h-[54px] items-center justify-between gap-3 border-b border-[#222733] bg-[#050608]/95 px-3 sm:px-5 z-20">
+      {/* Zone 1: Back to Song Select + Brand + Track */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <button
+          type="button"
+          onClick={onBackToSongSelect}
+          className="flex items-center gap-1 rounded-md border border-[#374052] bg-[#141820] px-2.5 py-1.5 text-xs font-bold text-[#f3f4f6] hover:border-[var(--theme-primary)] cursor-pointer whitespace-nowrap shrink-0"
+          title="Back to Beatmap Select"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Songs</span>
+        </button>
+
         <span className="font-display text-sm font-extrabold tracking-[0.16em] text-[#f3f4f6] whitespace-nowrap shrink-0">
           ORBIT
         </span>
-        <div className="hidden sm:flex items-center gap-1" aria-hidden="true">
+
+        <div className="hidden md:flex items-center gap-1" aria-hidden="true">
           {[0, 1, 2, 3].map((idx) => (
             <span
               key={idx}
@@ -64,14 +79,16 @@ export const TopBar: React.FC<TopBarProps> = ({
             />
           ))}
         </div>
+
         <span className="hidden md:inline text-[#374052]" aria-hidden="true">
           /
         </span>
+
         <button
           type="button"
-          onClick={onOpenTracks}
-          className="truncate max-w-[160px] sm:max-w-[260px] text-left text-xs font-semibold text-[#9ca3af] hover:text-[var(--theme-bright)] transition-colors cursor-pointer whitespace-nowrap"
-          title="Open Track Library & Newgrounds Loader"
+          onClick={onBackToSongSelect}
+          className="truncate max-w-[130px] sm:max-w-[240px] text-left text-xs font-semibold text-[#9ca3af] hover:text-[var(--theme-bright)] transition-colors cursor-pointer whitespace-nowrap"
+          title="Switch Beatmap Track"
         >
           {activeSong.num} · {activeSong.title}
         </button>
@@ -79,6 +96,17 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Zone 2 & 3: Compact Tactical Controls */}
       <nav className="flex items-center gap-2 shrink-0" aria-label="Game Controls">
+        {/* Orb Bank Trigger */}
+        <button
+          type="button"
+          onClick={onOpenOrbVault}
+          title="Open Orb Vault & Unlocks"
+          className="hidden sm:flex items-center gap-1.5 rounded-md border border-[#374052] bg-[#0c0e12] px-2.5 py-1.5 text-xs font-extrabold text-[#fbbf24] hover:border-[#fbbf24] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
+        >
+          <Coins className="h-3.5 w-3.5" />
+          <span>{orbs.toLocaleString()}</span>
+        </button>
+
         {/* Difficulty Selector */}
         <div ref={popRef} className="relative">
           <button
@@ -89,7 +117,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
             aria-haspopup="listbox"
             aria-expanded={diffOpen}
-            className="flex items-center gap-2 rounded-md border border-[#374052] bg-[#0c0e12] px-3 py-1.5 text-xs font-bold tracking-wider text-[#f3f4f6] hover:border-[var(--theme-primary)] hover:bg-[#141820] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="flex items-center gap-2 rounded-md border border-[#374052] bg-[#0c0e12] px-2.5 sm:px-3 py-1.5 text-xs font-bold tracking-wider text-[#f3f4f6] hover:border-[var(--theme-primary)] hover:bg-[#141820] transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <span>{currentDiff.name}</span>
             <span className="tabular-nums text-[var(--theme-bright)]">
@@ -106,7 +134,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <div
               role="listbox"
               aria-label="Difficulty Tiers"
-              className="absolute right-0 top-[calc(100%+6px)] z-50 w-64 rounded-lg border border-[#374052] bg-[#0c0e12] p-1.5 flex flex-col gap-1"
+              className="absolute right-0 top-[calc(100%+6px)] z-50 w-72 rounded-lg border border-[#374052] bg-[#0c0e12] p-1.5 flex flex-col gap-1"
             >
               {DIFFICULTY_ORDER.map((diffId) => {
                 const diff = DIFFICULTIES[diffId];
@@ -119,10 +147,14 @@ export const TopBar: React.FC<TopBarProps> = ({
                   <button
                     key={diffId}
                     type="button"
-                    disabled={!unlocked}
+                    disabled={!supported}
                     onClick={() => {
-                      if (!unlocked) return;
                       setDiffOpen(false);
+                      if (!supported) return;
+                      if (!unlocked) {
+                        onOpenOrbVault();
+                        return;
+                      }
                       onSelectDifficulty(diffId);
                     }}
                     className={`flex w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors ${
@@ -132,18 +164,21 @@ export const TopBar: React.FC<TopBarProps> = ({
                     } disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
                   >
                     <div className="flex w-full items-center justify-between text-xs font-bold tracking-wide">
-                      <span className="text-[#f3f4f6]">
-                        {diff.name} {star ? `· ${star}` : ''} {!unlocked ? '(Locked)' : ''}
+                      <span className="flex items-center gap-1.5 text-[#f3f4f6]">
+                        {!unlocked && supported && <Lock className="h-3 w-3 text-[#fbbf24]" />}
+                        <span>
+                          {diff.name} {star ? `· ${star}` : ''}
+                        </span>
                       </span>
                       <span className="tabular-nums text-[var(--theme-bright)]">
-                        {diff.mult.toFixed(2)}x
+                        {!unlocked && supported ? `${diff.orbCost} Orbs` : `${diff.mult.toFixed(2)}x`}
                       </span>
                     </div>
                     <span className="text-[11px] text-[#9ca3af]">
                       {!supported
                         ? 'Tutorial track is Chill-rated only'
                         : !unlocked
-                        ? 'Clear previous tier or use Dev code'
+                        ? `Click to unlock for ${diff.orbCost} Orbs in the Vault`
                         : diff.desc}
                     </span>
                   </button>
@@ -157,16 +192,16 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={onOpenMods}
-          className="flex items-center gap-1.5 rounded-md border border-[#222733] bg-[#0c0e12] px-3 py-1.5 text-xs font-semibold text-[#f3f4f6] hover:border-[#374052] hover:bg-[#141820] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          className="flex items-center gap-1.5 rounded-md border border-[#222733] bg-[#0c0e12] px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-[#f3f4f6] hover:border-[#374052] hover:bg-[#141820] transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
           <SlidersHorizontal className="h-3.5 w-3.5 text-[#9ca3af]" />
-          <span>Mods</span>
+          <span className="hidden sm:inline">Mods</span>
           <span className="tabular-nums text-[var(--theme-bright)]">
             {equippedModsCount}/3
           </span>
         </button>
 
-        {/* Live Total Mult Readout (compact desktop metadata) */}
+        {/* Live Total Mult Readout */}
         <span className="hidden lg:inline-block tabular-nums text-xs font-bold text-[#9ca3af] px-1 whitespace-nowrap shrink-0">
           {totalMultiplier.toFixed(2)}x Total
         </span>
@@ -176,8 +211,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={onOpenPause}
           aria-label="Pause Game and Open Menu"
-          title="Pause & Library (Esc)"
-          className="flex items-center justify-center gap-1.5 rounded-md border border-[#374052] bg-[#141820] px-3 py-1.5 text-xs font-bold text-[#f3f4f6] hover:border-[var(--theme-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          title="Pause & Settings (Esc)"
+          className="flex items-center justify-center gap-1.5 rounded-md border border-[#374052] bg-[#141820] px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#f3f4f6] hover:border-[var(--theme-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
           <Pause className="h-3.5 w-3.5 fill-current" />
           <span className="hidden sm:inline">Menu</span>

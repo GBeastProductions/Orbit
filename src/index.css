@@ -52,7 +52,24 @@ body,
   font-family: var(--font-mono);
 }
 
-/* Custom slim hardware scrollbars inside drawers */
+/* Subtle retro arcade CRT scanline texture (pure CSS, zero GPU blur cost) */
+.arcade-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.025) 0px,
+    rgba(255, 255, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.arcade-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
 .orbit-scroll::-webkit-scrollbar {
   width: 6px;
 }
@@ -68,6 +85,21 @@ body,
 
 .orbit-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--theme-primary);
+}
+
+@keyframes arcadePulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+.animate-arcade-pulse {
+  animation: arcadePulse 2.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

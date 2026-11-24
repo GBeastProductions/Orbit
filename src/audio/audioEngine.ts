@@ -13,6 +13,7 @@ export interface DecodedCustomAudio {
 
 class OrbitAudioEngine {
   private ctx: AudioContext | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
@@ -23,28 +24,39 @@ class OrbitAudioEngine {
   private loadingPromises = new Map<string, Promise<AudioBuffer | null>>();
 
   private activeSource: AudioBufferSourceNode | null = null;
+  private activeSourceGain: GainNode | null = null;
   private activeSongId: string | null = null;
   private playing = false;
-  private currentRate = 1.0;
-  private lastCtxTime = 0;
-  private integratedSongSec = 0;
-  private activeDurationSec = 0;
+  private startedAtCtxTime = 0;
+  private startOffsetSec = 0;
 
   ensureContext(): AudioContext | null {
     if (!this.ctx) {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!Ctx) return null;
       this.ctx = new Ctx();
+
+      // Master dynamics compressor prevents audio clipping/plucking on dense overlaps
+      this.compressor = this.ctx.createDynamicsCompressor();
+      this.compressor.threshold.setValueAtTime(-12, this.ctx.currentTime);
+      this.compressor.knee.setValueAtTime(18, this.ctx.currentTime);
+      this.compressor.ratio.setValueAtTime(4, this.ctx.currentTime);
+      this.compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+      this.compressor.release.setValueAtTime(0.15, this.ctx.currentTime);
+      this.compressor.connect(this.ctx.destination);
+
       this.musicGain = this.ctx.createGain();
       this.sfxGain = this.ctx.createGain();
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 64;
-      this.analyser.smoothingTimeConstant = 0.78;
+      this.analyser.smoothingTimeConstant = 0.8;
       this.freqBins = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount));
 
       this.musicGain.connect(this.analyser);
-      this.analyser.connect(this.ctx.destination);
-      this.sfxGain.connect(this.ctx.destination);
+      this.analyser.connect(this.compressor);
+      this.sfxGain.connect(this.compressor);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
@@ -56,11 +68,142 @@ class OrbitAudioEngine {
     const ctx = this.ctx;
     if (!ctx) return;
     if (this.musicGain) {
-      this.musicGain.gain.setTargetAtTime(musicEnabled ? (musicVol / 100) * 0.72 : 0, ctx.currentTime, 0.02);
+      this.musicGain.gain.setTargetAtTime(musicEnabled ? (musicVol / 100) * 0.72 : 0, ctx.currentTime, 0.025);
     }
     if (this.sfxGain) {
-      this.sfxGain.gain.setTargetAtTime(soundEnabled ? (sfxVol / 100) * 0.78 : 0, ctx.currentTime, 0.01);
+      this.sfxGain.gain.setTargetAtTime(soundEnabled ? (sfxVol / 100) * 0.72 : 0, ctx.currentTime, 0.015);
     }
+  }
+
+  private async renderFallbackSynthBuffer(song: SongDefinition): Promise<AudioBuffer | null> {
+    const fallback = song.synthFallback;
+    if (!fallback) return null;
+
+    const OfflineCtx =
+      window.OfflineAudioContext ||
+      (window as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+    if (!OfflineCtx) return null;
+
+    const sr = 22050;
+    const dur = Math.max(20, song.durationSec);
+    const offCtx = new OfflineCtx(1, Math.ceil(sr * (dur + 0.5)), sr);
+    const master = offCtx.createGain();
+    master.gain.value = 0.68;
+    master.connect(offCtx.destination);
+
+    const noiseLen = Math.floor(sr * 0.2);
+    const noiseBuf = offCtx.createBuffer(1, noiseLen, sr);
+    const nData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) nData[i] = Math.random() * 2 - 1;
+
+    const stepDur = 60 / song.bpm / 2;
+    const totalSteps = Math.floor(dur / stepDur);
+
+    for (let step = 0; step < totalSteps; step++) {
+      const t = step * stepDur;
+      const prog = t / dur;
+      const bar = Math.floor(step / 8);
+      const stepInBar = step % 8;
+      const chord = fallback.chords[bar % fallback.chords.length];
+      const isDrop = (prog >= 0.25 && prog < 0.6) || (prog >= 0.72 && prog < 0.92);
+
+      // Kick
+      if (stepInBar % 2 === 0 && prog < 0.96) {
+        const kOsc = offCtx.createOscillator();
+        const kGain = offCtx.createGain();
+        kOsc.type = 'sine';
+        kOsc.frequency.setValueAtTime(132, t);
+        kOsc.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+        kGain.gain.setValueAtTime(0.001, t);
+        kGain.gain.linearRampToValueAtTime(isDrop ? 0.42 : 0.28, t + 0.004);
+        kGain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        kOsc.connect(kGain);
+        kGain.connect(master);
+        kOsc.start(t);
+        kOsc.stop(t + 0.15);
+      }
+
+      // Snare
+      if ((stepInBar === 2 || stepInBar === 6) && prog > 0.08 && prog < 0.95) {
+        const sSrc = offCtx.createBufferSource();
+        sSrc.buffer = noiseBuf;
+        const sFilt = offCtx.createBiquadFilter();
+        sFilt.type = 'highpass';
+        sFilt.frequency.value = 950;
+        const sGain = offCtx.createGain();
+        sGain.gain.setValueAtTime(0.001, t);
+        sGain.gain.linearRampToValueAtTime(isDrop ? 0.22 : 0.14, t + 0.003);
+        sGain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+        sSrc.connect(sFilt);
+        sFilt.connect(sGain);
+        sGain.connect(master);
+        sSrc.start(t);
+        sSrc.stop(t + 0.12);
+      }
+
+      // Bassline
+      if (stepInBar % 2 === 0 || isDrop) {
+        const bOsc = offCtx.createOscillator();
+        const bFilt = offCtx.createBiquadFilter();
+        const bGain = offCtx.createGain();
+        bOsc.type = fallback.style === 'house' ? 'triangle' : 'sawtooth';
+        bFilt.type = 'lowpass';
+        bFilt.frequency.setValueAtTime(isDrop ? 560 : 280, t);
+        bOsc.frequency.setValueAtTime(midiToFreq(chord[0]), t);
+        bGain.gain.setValueAtTime(0.001, t);
+        bGain.gain.linearRampToValueAtTime(isDrop ? 0.18 : 0.12, t + 0.008);
+        bGain.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 0.95);
+        bOsc.connect(bFilt);
+        bFilt.connect(bGain);
+        bGain.connect(master);
+        bOsc.start(t);
+        bOsc.stop(t + stepDur);
+      }
+
+      // Pad chord
+      if (stepInBar === 0) {
+        const padDur = stepDur * 7.5;
+        chord.slice(0, 3).forEach((m) => {
+          const pOsc = offCtx.createOscillator();
+          const pFilt = offCtx.createBiquadFilter();
+          const pGain = offCtx.createGain();
+          pOsc.type = fallback.style === 'rave' ? 'sawtooth' : 'triangle';
+          pFilt.type = 'lowpass';
+          pFilt.frequency.value = isDrop ? 1600 : 950;
+          pOsc.frequency.setValueAtTime(midiToFreq(m + 12), t);
+          pGain.gain.setValueAtTime(0.001, t);
+          pGain.gain.linearRampToValueAtTime(0.055, t + 0.03);
+          pGain.gain.exponentialRampToValueAtTime(0.001, t + padDur);
+          pOsc.connect(pFilt);
+          pFilt.connect(pGain);
+          pGain.connect(master);
+          pOsc.start(t);
+          pOsc.stop(t + padDur + 0.02);
+        });
+      }
+
+      // Lead melody
+      const note = fallback.lead[step % fallback.lead.length];
+      if (note > 0 && prog > 0.05) {
+        const lOsc = offCtx.createOscillator();
+        const lFilt = offCtx.createBiquadFilter();
+        const lGain = offCtx.createGain();
+        lOsc.type = fallback.style === 'arcade' ? 'square' : 'sawtooth';
+        lFilt.type = 'lowpass';
+        lFilt.frequency.value = isDrop ? 2600 : 1550;
+        lOsc.frequency.setValueAtTime(midiToFreq(note), t);
+        lGain.gain.setValueAtTime(0.001, t);
+        lGain.gain.linearRampToValueAtTime(isDrop ? 0.1 : 0.07, t + 0.012);
+        lGain.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 0.88);
+        lOsc.connect(lFilt);
+        lFilt.connect(lGain);
+        lGain.connect(master);
+        lOsc.start(t);
+        lOsc.stop(t + stepDur * 0.92);
+      }
+    }
+
+    return offCtx.startRendering();
   }
 
   async loadSongBuffer(song: SongDefinition): Promise<AudioBuffer | null> {
@@ -76,12 +219,20 @@ class OrbitAudioEngine {
 
     const task = (async () => {
       try {
-        const res = await fetch(song.audioUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const arrayBuf = await res.arrayBuffer();
-        const decoded = await ctx.decodeAudioData(arrayBuf);
-        this.bufferCache.set(song.id, decoded);
-        return decoded;
+        if (song.audioUrl) {
+          const res = await fetch(song.audioUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const arrayBuf = await res.arrayBuffer();
+          const decoded = await ctx.decodeAudioData(arrayBuf);
+          this.bufferCache.set(song.id, decoded);
+          return decoded;
+        }
+        if (song.synthFallback) {
+          const rendered = await this.renderFallbackSynthBuffer(song);
+          if (rendered) this.bufferCache.set(song.id, rendered);
+          return rendered;
+        }
+        return null;
       } catch (err) {
         console.warn(`Could not load audio for ${song.title}:`, err);
         return null;
@@ -114,21 +265,16 @@ class OrbitAudioEngine {
     }
   }
 
-  /**
-   * Lightweight energy-flux onset detector for custom Newgrounds / local MP3 files.
-   */
   analyzeAudioBeats(buffer: AudioBuffer): { estimatedBpm: number; onsets: number[] } {
     const data = buffer.getChannelData(0);
     const sr = buffer.sampleRate;
-    const hop = Math.floor(sr * 0.02); // 20ms analysis windows
+    const hop = Math.floor(sr * 0.02);
     const energies: number[] = [];
 
     for (let i = 0; i < data.length; i += hop) {
       let sum = 0;
       const end = Math.min(data.length, i + hop);
-      for (let j = i; j < end; j++) {
-        sum += data[j] * data[j];
-      }
+      for (let j = i; j < end; j++) sum += data[j] * data[j];
       energies.push(Math.sqrt(sum / Math.max(1, end - i)));
     }
 
@@ -147,7 +293,6 @@ class OrbitAudioEngine {
       }
     }
 
-    // Estimate median beat interval -> BPM
     let estimatedBpm = 124;
     if (onsets.length >= 8) {
       const intervals: number[] = [];
@@ -168,35 +313,47 @@ class OrbitAudioEngine {
     return { estimatedBpm, onsets };
   }
 
-  getCachedDuration(songId: string): number | null {
-    const buf = this.bufferCache.get(songId);
-    return buf ? buf.duration : null;
-  }
-
   stop(): void {
     this.activeSongId = null;
-    if (this.activeSource) {
+    const ctx = this.ctx;
+    if (this.activeSource && this.activeSourceGain && ctx) {
+      const src = this.activeSource;
+      const gain = this.activeSourceGain;
       try {
-        this.activeSource.onended = null;
-        this.activeSource.stop();
-        this.activeSource.disconnect();
+        // Anti-plucking smooth 22ms release envelope before stopping
+        gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.012);
+        src.stop(ctx.currentTime + 0.045);
       } catch {
-        // Ignore already-stopped source
+        try {
+          src.stop();
+        } catch {
+          // Ignore
+        }
       }
-      this.activeSource = null;
+    } else if (this.activeSource) {
+      try {
+        this.activeSource.stop();
+      } catch {
+        // Ignore
+      }
     }
+    this.activeSource = null;
+    this.activeSourceGain = null;
     this.playing = false;
   }
 
+  /**
+   * Always plays songs cleanly at 1.0x pitch/speed — never distorted or warped.
+   */
   async startAtOffset(
     song: SongDefinition,
     offsetSec: number,
-    playbackRate: number,
     musicEnabled: boolean,
     musicVol: number,
     soundEnabled: boolean,
     sfxVol: number,
     loop = false,
+    previewGainScale = 1.0,
   ): Promise<number | null> {
     const ctx = this.ensureContext();
     if (!ctx) return null;
@@ -206,74 +363,53 @@ class OrbitAudioEngine {
     this.updateVolumes(musicEnabled, musicVol, soundEnabled, sfxVol);
 
     const buffer = await this.loadSongBuffer(song);
-    if (!buffer || this.activeSongId !== song.id) {
-      return null;
-    }
+    if (!buffer || this.activeSongId !== song.id) return null;
 
     const safeOffset = Math.max(0, Math.min(offsetSec, Math.max(0, buffer.duration - 0.15)));
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.loop = loop;
-    src.playbackRate.setValueAtTime(playbackRate, ctx.currentTime);
-    if (this.musicGain) {
-      src.connect(this.musicGain);
-    }
+    // Strictly lock playbackRate to 1.0x — zero pitch/speed distortion!
+    src.playbackRate.setValueAtTime(1.0, ctx.currentTime);
+
+    const srcGain = ctx.createGain();
+    srcGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    srcGain.gain.linearRampToValueAtTime(previewGainScale, ctx.currentTime + 0.03);
+
+    src.connect(srcGain);
+    if (this.musicGain) srcGain.connect(this.musicGain);
 
     this.activeSource = src;
+    this.activeSourceGain = srcGain;
     this.playing = true;
-    this.currentRate = playbackRate;
-    this.lastCtxTime = ctx.currentTime;
-    this.integratedSongSec = safeOffset;
-    this.activeDurationSec = buffer.duration;
+    this.startedAtCtxTime = ctx.currentTime;
+    this.startOffsetSec = safeOffset;
 
     src.start(0, safeOffset);
     return buffer.duration;
   }
 
-  setPlaybackRate(rate: number): void {
-    if (!this.ctx || !this.activeSource || !this.playing) {
-      this.currentRate = rate;
-      return;
-    }
-    this.syncClock();
-    this.currentRate = rate;
-    this.activeSource.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.04);
-  }
-
   syncClock(): number | null {
     if (!this.playing || !this.ctx) return null;
-    const now = this.ctx.currentTime;
-    const dt = Math.max(0, now - this.lastCtxTime);
-    this.lastCtxTime = now;
-    this.integratedSongSec += dt * this.currentRate;
-    return this.integratedSongSec;
+    return this.startOffsetSec + (this.ctx.currentTime - this.startedAtCtxTime);
   }
 
   isPlaying(): boolean {
     return this.playing;
   }
 
-  getActiveDuration(): number {
-    return this.activeDurationSec;
-  }
-
-  /**
-   * Returns normalized bass energy [0..1] for Chromebook-friendly background pulsing.
-   */
   getBassEnergy(): number {
     if (!this.analyser || !this.freqBins || !this.playing) return 0;
     this.analyser.getByteFrequencyData(this.freqBins);
     let sum = 0;
     const count = Math.min(5, this.freqBins.length);
-    for (let i = 0; i < count; i++) {
-      sum += this.freqBins[i];
-    }
+    for (let i = 0; i < count; i++) sum += this.freqBins[i];
     return Math.min(1, sum / (count * 255));
   }
 
   private getSfxNoise(): AudioBuffer | null {
     if (this.sfxNoiseBuffer || !this.ctx) return this.sfxNoiseBuffer;
-    const len = Math.floor(this.ctx.sampleRate * 0.032);
+    const len = Math.floor(this.ctx.sampleRate * 0.03);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) {
@@ -304,8 +440,8 @@ class OrbitAudioEngine {
       const gain = ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(harmonicFreq, now);
-      gain.gain.setValueAtTime(0.001, now);
-      gain.gain.linearRampToValueAtTime(0.24, now + 0.005);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.22, now + 0.006);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
       osc.connect(gain);
       gain.connect(this.sfxGain);
@@ -320,34 +456,35 @@ class OrbitAudioEngine {
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(isPerfect ? 540 : 440, now);
       osc.frequency.exponentialRampToValueAtTime(160, now + 0.032);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.038);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.24, now + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
       osc.connect(gain);
       gain.connect(this.sfxGain);
       osc.start(now);
-      osc.stop(now + 0.042);
+      osc.stop(now + 0.045);
       return;
     }
 
-    // Tactile Switch + subtle scale ping
     const thock = ctx.createOscillator();
     const thockGain = ctx.createGain();
     thock.type = 'sine';
     thock.frequency.setValueAtTime(isPerfect ? 345 : 280, now);
     thock.frequency.exponentialRampToValueAtTime(72, now + 0.036);
-    thockGain.gain.setValueAtTime(0.26, now);
+    thockGain.gain.setValueAtTime(0.0001, now);
+    thockGain.gain.linearRampToValueAtTime(0.24, now + 0.004);
     thockGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.044);
     thock.connect(thockGain);
     thockGain.connect(this.sfxGain);
     thock.start(now);
-    thock.stop(now + 0.046);
+    thock.stop(now + 0.048);
 
     const ping = ctx.createOscillator();
     const pingGain = ctx.createGain();
     ping.type = 'sine';
     ping.frequency.setValueAtTime(harmonicFreq, now);
-    pingGain.gain.setValueAtTime(0.001, now);
-    pingGain.gain.linearRampToValueAtTime(isPerfect ? 0.08 : 0.045, now + 0.004);
+    pingGain.gain.setValueAtTime(0.0001, now);
+    pingGain.gain.linearRampToValueAtTime(isPerfect ? 0.075 : 0.042, now + 0.005);
     pingGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
     ping.connect(pingGain);
     pingGain.connect(this.sfxGain);
@@ -359,12 +496,12 @@ class OrbitAudioEngine {
       const nSrc = ctx.createBufferSource();
       nSrc.buffer = nb;
       const nGain = ctx.createGain();
-      nGain.gain.setValueAtTime(0.11, now);
+      nGain.gain.setValueAtTime(0.09, now);
       nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
       nSrc.connect(nGain);
       nGain.connect(this.sfxGain);
       nSrc.start(now);
-      nSrc.stop(now + 0.02);
+      nSrc.stop(now + 0.022);
     }
   }
 
@@ -377,8 +514,9 @@ class OrbitAudioEngine {
     const gain = ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(520, now);
-    osc.frequency.exponentialRampToValueAtTime(260, now + 0.22);
-    gain.gain.setValueAtTime(0.14, now);
+    osc.frequency.exponentialRampToValueAtTime(280, now + 0.22);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.14, now + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
     osc.connect(gain);
     gain.connect(this.sfxGain);
@@ -396,7 +534,8 @@ class OrbitAudioEngine {
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(320, now);
     osc.frequency.exponentialRampToValueAtTime(110, now + 0.18);
-    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.16, now + 0.006);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.19);
     osc.connect(gain);
     gain.connect(this.sfxGain);
@@ -414,7 +553,8 @@ class OrbitAudioEngine {
       const gain = ctx.createGain();
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(freq, now + idx * 0.08);
-      gain.gain.setValueAtTime(0.16, now + idx * 0.08);
+      gain.gain.setValueAtTime(0.0001, now + idx * 0.08);
+      gain.gain.linearRampToValueAtTime(0.15, now + idx * 0.08 + 0.006);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.08 + 0.22);
       osc.connect(gain);
       gain.connect(this.sfxGain!);
@@ -433,7 +573,8 @@ class OrbitAudioEngine {
       const gain = ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, now + idx * 0.075);
-      gain.gain.setValueAtTime(0.17, now + idx * 0.075);
+      gain.gain.setValueAtTime(0.0001, now + idx * 0.075);
+      gain.gain.linearRampToValueAtTime(0.16, now + idx * 0.075 + 0.008);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.075 + 0.24);
       osc.connect(gain);
       gain.connect(this.sfxGain!);

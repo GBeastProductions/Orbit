@@ -2,16 +2,18 @@ import React, { useRef, useState } from 'react';
 import {
   BarChart3,
   BookOpen,
+  Coins,
   ExternalLink,
   Gamepad2,
+  Home,
   ListMusic,
+  Lock,
   Settings,
   Upload,
   Volume2,
 } from 'lucide-react';
 import {
   CHASSIS_THEMES,
-  DEV_PASSCODE,
   DIFFICULTIES,
   DIFFICULTY_ORDER,
   MOD_CATALOG,
@@ -39,6 +41,9 @@ interface PausePanelProps {
   listeningSlot: 0 | 1 | 2;
   onStartRebind: (slot: 1 | 2) => void;
   onResume: () => void;
+  onGoToSongSelect: () => void;
+  onGoToTitle: () => void;
+  onOpenOrbVault: () => void;
   onSelectTrack: (songId: string, diffId: DifficultyId) => void;
   onLookupNewgroundsId: (ngId: string) => void;
   onUploadCustomAudio: (file: File, ngIdTag: string) => Promise<void>;
@@ -78,6 +83,9 @@ export const PausePanel: React.FC<PausePanelProps> = ({
   listeningSlot,
   onStartRebind,
   onResume,
+  onGoToSongSelect,
+  onGoToTitle,
+  onOpenOrbVault,
   onSelectTrack,
   onLookupNewgroundsId,
   onUploadCustomAudio,
@@ -133,7 +141,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="pausePanelHeading"
-      className={`fixed top-0 right-0 bottom-0 z-50 grid w-[min(94vw,510px)] grid-cols-[1fr_56px] border-l border-[#374052] bg-[#0c0e12] transition-transform duration-200 ease-out ${
+      className={`fixed top-0 right-0 bottom-0 z-50 grid w-[min(94vw,520px)] grid-cols-[1fr_56px] border-l border-[#374052] bg-[#0c0e12] transition-transform duration-200 ease-out ${
         open ? 'translate-x-0' : 'translate-x-full pointer-events-none'
       }`}
     >
@@ -142,27 +150,36 @@ export const PausePanel: React.FC<PausePanelProps> = ({
         <div className="flex items-center justify-between gap-2 border-b border-[#222733] bg-[#141820] px-4 py-3.5">
           <div className="min-w-0">
             <p className="tabular-nums text-[10px] font-extrabold tracking-[0.14em] uppercase text-[var(--theme-bright)]">
-              {mustChooseTrack ? 'Choose Next Track' : 'Game Paused'}
+              {mustChooseTrack ? 'Choose Next Track' : 'Orbit Menu'}
             </p>
             <h2 id="pausePanelHeading" className="font-display text-base font-extrabold uppercase tracking-wider text-[#f3f4f6]">
               {TAB_TITLES[activeTab]}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={() => onChangeTab('disp')}
-              className="rounded-md border border-[#374052] bg-[#0c0e12] px-2.5 py-1.5 text-[11px] font-bold text-[#9ca3af] hover:text-[#f3f4f6] cursor-pointer"
+              onClick={onGoToTitle}
+              title="Return to Title Screen"
+              className="rounded-md border border-[#374052] bg-[#0c0e12] p-1.5 text-[#9ca3af] hover:text-[#f3f4f6] cursor-pointer"
             >
-              Dev
+              <Home className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenOrbVault}
+              className="flex items-center gap-1 rounded-md border border-[#374052] bg-[#0c0e12] px-2 py-1.5 text-[11px] font-bold text-[#fbbf24] hover:border-[#fbbf24] cursor-pointer tabular-nums whitespace-nowrap"
+            >
+              <Coins className="h-3 w-3" />
+              <span>{profile.orbs}</span>
             </button>
             <button
               type="button"
               onClick={onResume}
               className="rounded-md bg-[var(--theme-primary)] px-3.5 py-1.5 text-xs font-bold text-[var(--theme-on-primary)] hover:bg-[var(--theme-bright)] transition-colors cursor-pointer whitespace-nowrap"
             >
-              {mustChooseTrack ? 'Pick Track' : 'Resume'}
+              {mustChooseTrack ? 'Pick Track' : 'Close'}
             </button>
           </div>
         </div>
@@ -172,7 +189,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
           {activeTab === 'main' && (
             <>
               <div className="border-b border-[#222733] pb-1.5 text-[11px] font-bold tracking-widest uppercase text-[#6b7280]">
-                Personal Records
+                Personal Records &amp; Orb Bank
               </div>
               <div className="grid grid-cols-3 gap-2 tabular-nums">
                 <div className="rounded-md border border-[var(--theme-primary)] bg-[var(--theme-dim)] p-2.5">
@@ -187,10 +204,10 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                   </div>
                   <div className="text-[11px] text-[#9ca3af]">Active Tier</div>
                 </div>
-                <div className="rounded-md border border-[#222733] bg-[#141820] p-2.5">
-                  <div className="text-[10px] font-bold uppercase text-[#6b7280]">Max Combo</div>
-                  <div className="text-lg font-extrabold text-[#f3f4f6]">{profile.bestStreak}x</div>
-                  <div className="text-[11px] text-[#9ca3af]">Peak Streak</div>
+                <div className="rounded-md border border-[#fbbf24]/40 bg-[#241904]/60 p-2.5">
+                  <div className="text-[10px] font-bold uppercase text-[#fbbf24]">Orb Bank</div>
+                  <div className="text-lg font-extrabold text-[#fde047]">{profile.orbs.toLocaleString()}</div>
+                  <div className="text-[11px] text-[#fde68a]">{profile.totalOrbsEarned} Earned</div>
                 </div>
               </div>
 
@@ -218,7 +235,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                 <div className="rounded-md border border-[#222733] bg-[#141820] p-2.5">
                   <div className="text-[10px] font-bold uppercase text-[#6b7280]">Avg Center Offset</div>
                   <div className="text-lg font-extrabold text-[#f3f4f6]">{avgOffset}°</div>
-                  <div className="text-[11px] text-[#9ca3af]">Lower is Tighter</div>
+                  <div className="text-[11px] text-[#9ca3af]">Peak Streak: {profile.bestStreak}x</div>
                 </div>
               </div>
 
@@ -238,10 +255,10 @@ export const PausePanel: React.FC<PausePanelProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => onChangeTab('tracks')}
+                  onClick={onGoToSongSelect}
                   className="rounded-md border border-[#374052] bg-[#141820] py-2 text-xs font-bold text-[#f3f4f6] hover:border-[var(--theme-primary)] cursor-pointer"
                 >
-                  Select Beatmap Track
+                  Open Song Select
                 </button>
                 <button
                   type="button"
@@ -254,37 +271,35 @@ export const PausePanel: React.FC<PausePanelProps> = ({
             </>
           )}
 
-          {/* TAB 2: TRACKS + NEWGROUNDS ID LOADER */}
+          {/* TAB 2: QUICK TRACKS + NEWGROUNDS ID LOADER */}
           {activeTab === 'tracks' && (
             <>
-              {mustChooseTrack && (
-                <div className="rounded-md border border-[var(--theme-primary)] bg-[var(--theme-dim)] p-3">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-[var(--theme-bright)]">
-                    Tutorial Complete — Pick Your First Track
-                  </p>
-                  <p className="mt-1 text-xs text-[#f3f4f6]">
-                    Choose a Chill or Normal chart below to start playing the main soundtrack.
-                  </p>
-                </div>
-              )}
+              <div className="flex items-center justify-between gap-2 rounded-md border border-[#374052] bg-[#141820] px-3 py-2">
+                <span className="text-xs font-semibold text-[#d1d5db]">
+                  Want full artwork, Dim/Blur &amp; custom level images?
+                </span>
+                <button
+                  type="button"
+                  onClick={onGoToSongSelect}
+                  className="rounded bg-[var(--theme-primary)] px-2.5 py-1 text-[11px] font-bold text-[var(--theme-on-primary)] hover:bg-[var(--theme-bright)] cursor-pointer whitespace-nowrap"
+                >
+                  Song Select
+                </button>
+              </div>
 
-              {/* Newgrounds Song ID Lookup & Local MP3 Beatmap Generator */}
               <div className="rounded-lg border border-[#374052] bg-[#141820] p-3 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-extrabold uppercase tracking-wider text-[#f3f4f6]">
                     Newgrounds ID &amp; Custom Audio
                   </span>
-                  <span className="text-[10px] font-bold text-[#9ca3af]">Geometry Dash Style</span>
+                  <span className="text-[10px] font-bold text-[#9ca3af]">1.0x Pure Sync</span>
                 </div>
-                <p className="text-[11px] text-[#9ca3af]">
-                  Enter a Newgrounds Song ID to jump to a built-in track, open its Newgrounds page, or load any local MP3/OGG file with automatic Web Audio beat-sync.
-                </p>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={ngInput}
                     onChange={(e) => setNgInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    placeholder="Newgrounds ID (e.g. 1644660)"
+                    placeholder="Newgrounds ID (e.g. 587069)"
                     className="flex-1 rounded-md border border-[#374052] bg-[#07080b] px-2.5 py-1.5 font-mono text-xs text-[#f3f4f6] outline-none focus:border-[var(--theme-primary)]"
                   />
                   <button
@@ -338,6 +353,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
               <div className="flex flex-col gap-2.5">
                 {songs.map((song) => {
                   const isCurrent = profile.selectedSongId === song.id;
+                  const songUnlocked = profile.devUnlocked || profile.unlockedSongs.includes(song.id);
                   const rec = profile.songRecords[song.id];
                   const tiers = song.chillOnly ? (['CHILL'] as DifficultyId[]) : DIFFICULTY_ORDER;
 
@@ -355,7 +371,11 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                           Track {song.num} · NG #{song.newgroundsId} · {song.bpm} BPM · {formatTimeSec(song.durationSec)}
                         </span>
                         <span className="text-[#9ca3af]">
-                          {rec ? `${rec.bestRank} · ${rec.bestScore.toLocaleString()}` : 'Unplayed'}
+                          {!songUnlocked
+                            ? `${song.orbCost} Orbs`
+                            : rec
+                            ? `${rec.bestRank} · ${rec.bestScore.toLocaleString()}`
+                            : 'Unplayed'}
                         </span>
                       </div>
 
@@ -368,30 +388,46 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                         </p>
                       </div>
 
-                      <p className="text-xs text-[#9ca3af]">{song.desc}</p>
-
                       <div className="flex flex-wrap gap-1.5 pt-1 tabular-nums">
-                        {tiers.map((diffId) => {
-                          const unlocked = profile.devUnlocked || profile.unlockedDiffs.includes(diffId);
-                          const selected = isCurrent && profile.selectedDifficulty === diffId;
-                          const star = song.stars[diffId] || '';
+                        {!songUnlocked ? (
+                          <button
+                            type="button"
+                            onClick={onOpenOrbVault}
+                            className="flex items-center gap-1 rounded border border-[#fbbf24]/60 bg-[#261a04] px-2.5 py-1 text-[11px] font-bold text-[#fbbf24] cursor-pointer"
+                          >
+                            <Lock className="h-3 w-3" />
+                            <span>Unlock in Orb Vault ({song.orbCost} Orbs)</span>
+                          </button>
+                        ) : (
+                          tiers.map((diffId) => {
+                            const unlocked = profile.devUnlocked || profile.unlockedDiffs.includes(diffId);
+                            const selected = isCurrent && profile.selectedDifficulty === diffId;
+                            const star = song.stars[diffId] || '';
 
-                          return (
-                            <button
-                              key={diffId}
-                              type="button"
-                              disabled={!unlocked}
-                              onClick={() => onSelectTrack(song.id, diffId)}
-                              className={`rounded border px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                selected
-                                  ? 'border-[var(--theme-primary)] bg-[var(--theme-primary)] text-[var(--theme-on-primary)]'
-                                  : 'border-[#374052] bg-[#0c0e12] text-[#f3f4f6] hover:border-[var(--theme-primary)]'
-                              }`}
-                            >
-                              {diffId} {star} {!unlocked ? '(Locked)' : ''}
-                            </button>
-                          );
-                        })}
+                            return (
+                              <button
+                                key={diffId}
+                                type="button"
+                                onClick={() => {
+                                  if (!unlocked) {
+                                    onOpenOrbVault();
+                                    return;
+                                  }
+                                  onSelectTrack(song.id, diffId);
+                                }}
+                                className={`rounded border px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
+                                  selected
+                                    ? 'border-[var(--theme-primary)] bg-[var(--theme-primary)] text-[var(--theme-on-primary)]'
+                                    : unlocked
+                                    ? 'border-[#374052] bg-[#0c0e12] text-[#f3f4f6] hover:border-[var(--theme-primary)]'
+                                    : 'border-[#222733] bg-[#0c0e12] text-[#6b7280] hover:border-[#fbbf24]'
+                                }`}
+                              >
+                                {diffId} {star} {!unlocked ? `(${DIFFICULTIES[diffId].orbCost} Orbs)` : ''}
+                              </button>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   );
@@ -484,8 +520,8 @@ export const PausePanel: React.FC<PausePanelProps> = ({
 
               <div className="flex items-center justify-between gap-3 rounded-md border border-[#222733] bg-[#141820] p-3">
                 <div>
-                  <div className="text-xs font-bold text-[#f3f4f6]">Slow-Motion Tutorial Replay</div>
-                  <div className="text-[11px] text-[#9ca3af]">Replay Moments Passing Us with guided slow-mo lessons</div>
+                  <div className="text-xs font-bold text-[#f3f4f6]">Tutorial Replay</div>
+                  <div className="text-[11px] text-[#9ca3af]">Replay Moments Passing Us with dial slow-mo guides</div>
                 </div>
                 <button
                   type="button"
@@ -502,7 +538,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
           {activeTab === 'audio' && (
             <>
               <div className="border-b border-[#222733] pb-1.5 text-[11px] font-bold tracking-widest uppercase text-[#6b7280]">
-                Soundtrack Engine
+                Soundtrack Engine (Pure 1.0x)
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded-md border border-[#222733] bg-[#141820] p-3">
@@ -612,26 +648,39 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                 Chassis Accent &amp; Performance
               </div>
 
-              <div className="flex items-center justify-between gap-3 rounded-md border border-[#222733] bg-[#141820] p-3">
+              <div className="rounded-md border border-[#222733] bg-[#141820] p-3 flex flex-col gap-2">
                 <div>
                   <div className="text-xs font-bold text-[#f3f4f6]">Dial Lighting Palette</div>
-                  <div className="text-[11px] text-[#9ca3af]">High-contrast solid accent</div>
+                  <div className="text-[11px] text-[#9ca3af]">Synthwave &amp; Crimson skins unlock in the Orb Vault</div>
                 </div>
-                <div className="flex overflow-hidden rounded border border-[#374052]">
-                  {(Object.keys(CHASSIS_THEMES) as ThemeId[]).map((tid) => (
-                    <button
-                      key={tid}
-                      type="button"
-                      onClick={() => onSelectTheme(tid)}
-                      className={`border-r border-[#374052] last:border-r-0 px-2.5 py-1.5 text-[11px] font-bold uppercase cursor-pointer ${
-                        profile.theme === tid
-                          ? 'bg-[var(--theme-primary)] text-[var(--theme-on-primary)]'
-                          : 'bg-[#0c0e12] text-[#9ca3af]'
-                      }`}
-                    >
-                      {tid}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap gap-1.5">
+                  {(Object.keys(CHASSIS_THEMES) as ThemeId[]).map((tid) => {
+                    const themeCfg = CHASSIS_THEMES[tid];
+                    const unlocked = profile.devUnlocked || profile.unlockedThemes.includes(tid);
+                    return (
+                      <button
+                        key={tid}
+                        type="button"
+                        onClick={() => {
+                          if (!unlocked) {
+                            onOpenOrbVault();
+                            return;
+                          }
+                          onSelectTheme(tid);
+                        }}
+                        className={`flex items-center gap-1 rounded border px-2.5 py-1.5 text-[11px] font-bold uppercase cursor-pointer ${
+                          profile.theme === tid
+                            ? 'border-[var(--theme-primary)] bg-[var(--theme-primary)] text-[var(--theme-on-primary)]'
+                            : unlocked
+                            ? 'border-[#374052] bg-[#0c0e12] text-[#f3f4f6]'
+                            : 'border-[#222733] bg-[#0c0e12] text-[#6b7280] hover:border-[#fbbf24]'
+                        }`}
+                      >
+                        {!unlocked && <Lock className="h-3 w-3 text-[#fbbf24]" />}
+                        <span>{themeCfg.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -674,7 +723,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-[#9ca3af]">
-                  Unlocks all tracks, difficulty tiers, and mod cartridges for testing.
+                  Unlocks all tracks, difficulty tiers, retro skins, and mod cartridges for testing.
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -684,7 +733,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleDevSubmit();
                     }}
-                    placeholder={`Enter dev code...`}
+                    placeholder="Enter dev code..."
                     aria-label="Developer Access Code"
                     className="flex-1 rounded border border-[#374052] bg-[#07080b] px-2.5 py-1.5 font-mono text-xs text-[#f3f4f6] outline-none focus:border-[var(--theme-primary)]"
                   />
@@ -697,7 +746,6 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                   </button>
                 </div>
                 {devError && <p className="text-[11px] font-semibold text-[#ef4444]">{devError}</p>}
-                {DEV_PASSCODE && null}
               </div>
 
               <div className="border-b border-[#222733] pb-1.5 text-[11px] font-bold tracking-widest uppercase text-[#6b7280]">
@@ -809,7 +857,7 @@ export const PausePanel: React.FC<PausePanelProps> = ({
                       >
                         <div className="flex items-center justify-between text-xs font-extrabold tabular-nums">
                           <span className="text-[#f3f4f6]">
-                            {d.name} ({unlocked ? 'Unlocked' : 'Locked'})
+                            {d.name} ({unlocked ? 'Unlocked' : `${d.orbCost} Orbs`})
                           </span>
                           <span className="text-[var(--theme-bright)]">{d.mult.toFixed(2)}x</span>
                         </div>

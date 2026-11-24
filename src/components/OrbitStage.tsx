@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Coins } from 'lucide-react';
 import { CHASSIS_THEMES, NEEDLE_TOLERANCE, WAVE_MODES } from '../data/catalog';
 import { signedAngleDiff, TAU } from '../engine/beatmap';
 import {
@@ -6,6 +7,7 @@ import {
   GamePhase,
   HazardMine,
   HitEffect,
+  HitErrorTick,
   PortalPair,
   SongSection,
   TargetSector,
@@ -24,6 +26,7 @@ export interface CanvasRenderState {
   hazards: HazardMine[];
   portal: PortalPair | null;
   hitEffects: HitEffect[];
+  hitErrorTicks: HitErrorTick[];
   hubStatusText: string;
   hubStatusColor: string | null;
   hubStatusTimer: number;
@@ -52,6 +55,7 @@ interface OrbitStageProps {
   score: number;
   streak: number;
   bestScore: number;
+  unbankedOrbs: number;
   streakMult: number;
   totalMult: number;
   modeName: string;
@@ -77,6 +81,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
   score,
   streak,
   bestScore,
+  unbankedOrbs,
   streakMult,
   totalMult,
   modeName,
@@ -101,7 +106,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
     if (!ctx) return;
 
     const resize = () => {
-      // Cap DPR at 2 for Chromebook / tablet 60fps efficiency
+      // Cap DPR at 2 for Chromebook / OTG tablet 60fps efficiency
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = wrap.getBoundingClientRect();
       canvas.width = Math.max(1, Math.floor(rect.width * dpr));
@@ -119,39 +124,38 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
     const drawFrame = () => {
       const st = renderStateRef.current;
       const { width, height } = sizeRef.current;
+      const meterReserve = 24;
       const cx = width / 2 + st.shakeX;
-      const cy = height / 2;
-      const maxR = Math.min(width / 2, height / 2) * 0.94;
+      const cy = (height - meterReserve) / 2;
+      const maxR = Math.min(width / 2, (height - meterReserve) / 2) * 0.94;
       const theme = CHASSIS_THEMES[themeId] || CHASSIS_THEMES.emerald;
 
-      // Clear background
-      ctx.fillStyle = '#050608';
-      ctx.fillRect(0, 0, width, height);
+      // Clear transparently so per-song BackgroundBackdrop renders visibly behind the dial
+      ctx.clearRect(0, 0, width, height);
 
-      // Dynamic Chromebook-friendly Audio-Reactive Background
+      // Dynamic Chromebook-friendly Audio-Reactive Radial Rings
       if (bgFxMode === 'dynamic') {
         const energy = st.bassEnergy;
         const isDrop = st.songSection === 'DROP';
         const ringCount = 3;
 
         for (let rIdx = 0; rIdx < ringCount; rIdx++) {
-          const baseExpand = maxR * (1.02 + rIdx * 0.16) + energy * (18 + rIdx * 8);
+          const baseExpand = maxR * (0.98 + rIdx * 0.14) + energy * (14 + rIdx * 7);
           ctx.beginPath();
           ctx.arc(cx, cy, baseExpand, 0, TAU);
-          ctx.strokeStyle = `rgba(${theme.bgAccentRgb}, ${(isDrop ? 0.16 : 0.08) * (1 - rIdx * 0.25)})`;
-          ctx.lineWidth = isDrop ? 1.5 : 1;
+          ctx.strokeStyle = `rgba(${theme.bgAccentRgb}, ${(isDrop ? 0.24 : 0.12) * (1 - rIdx * 0.25)})`;
+          ctx.lineWidth = isDrop ? 1.6 : 1;
           ctx.stroke();
         }
 
-        // Subtle radial crosshair spokes reacting to song beat pulse
-        const spokeAlpha = 0.04 + energy * 0.08;
+        const spokeAlpha = 0.06 + energy * 0.1;
         ctx.strokeStyle = `rgba(${theme.bgAccentRgb}, ${spokeAlpha.toFixed(3)})`;
         ctx.lineWidth = 1;
         for (let sIdx = 0; sIdx < 8; sIdx++) {
           const a = (sIdx * TAU) / 8 + st.spinnerAngle * 0.08;
           ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(a) * (maxR * 0.92), cy + Math.sin(a) * (maxR * 0.92));
-          ctx.lineTo(cx + Math.cos(a) * (maxR * 1.45), cy + Math.sin(a) * (maxR * 1.45));
+          ctx.moveTo(cx + Math.cos(a) * (maxR * 0.9), cy + Math.sin(a) * (maxR * 0.9));
+          ctx.lineTo(cx + Math.cos(a) * (maxR * 1.38), cy + Math.sin(a) * (maxR * 1.38));
           ctx.stroke();
         }
       }
@@ -171,7 +175,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, st.dialVisualAlpha));
 
-      const beatExpand = st.beatPulse * 2.4;
+      const beatExpand = st.beatPulse * 2.2;
       const bezelOuterR = maxR * 0.86 + beatExpand;
       const trackRadius = maxR * 0.69;
       const trackWidth = Math.max(22, maxR * 0.145);
@@ -187,21 +191,21 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.beginPath();
         ctx.moveTo(cx + Math.cos(angle) * rStart, cy + Math.sin(angle) * rStart);
         ctx.lineTo(cx + Math.cos(angle) * rEnd, cy + Math.sin(angle) * rEnd);
-        ctx.strokeStyle = isMajor ? '#374052' : '#1b202b';
+        ctx.strokeStyle = isMajor ? '#4b5563' : '#1f2430';
         ctx.lineWidth = isMajor ? 1.5 : 1;
         ctx.stroke();
       }
 
-      // Machined Outer Bezel
+      // Machined Outer Bezel (subtle translucency lets album backdrop bleed subtly at edges)
       const bezelGrad = ctx.createLinearGradient(
         cx - bezelOuterR,
         cy - bezelOuterR,
         cx + bezelOuterR,
         cy + bezelOuterR,
       );
-      bezelGrad.addColorStop(0, '#1a1f29');
-      bezelGrad.addColorStop(0.5, '#10131a');
-      bezelGrad.addColorStop(1, '#07080c');
+      bezelGrad.addColorStop(0, 'rgba(26, 31, 41, 0.94)');
+      bezelGrad.addColorStop(0.5, 'rgba(16, 19, 26, 0.94)');
+      bezelGrad.addColorStop(1, 'rgba(7, 8, 12, 0.96)');
 
       ctx.beginPath();
       ctx.arc(cx, cy, bezelOuterR, 0, TAU);
@@ -214,8 +218,8 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ? '#fde047'
         : isIlluminated
         ? theme.bright
-        : '#242936';
-      ctx.lineWidth = st.lessonSlowActive ? 2 : 1.25;
+        : '#2e3545';
+      ctx.lineWidth = st.lessonSlowActive ? 2.2 : 1.35;
       ctx.stroke();
 
       // Recessed Calibration Track
@@ -301,7 +305,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       }
 
       // Target Sectors
-      const isFailed = st.phase === 'SUMMARY' && st.missReasonText;
+      const isFailed = st.phase === 'SUMMARY' && Boolean(st.missReasonText);
       for (let i = 0; i < st.targets.length; i++) {
         const t = st.targets[i];
         const tStart = t.angle - t.halfWidth;
@@ -341,7 +345,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.lineCap = 'butt';
         ctx.stroke();
 
-        // Inner 24% Bullseye Core
+        // Inner 24% Orb Bullseye Core
         if (!isFailed) {
           const bullseyeHalf = t.halfWidth * 0.24;
           ctx.beginPath();
@@ -387,7 +391,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       for (let i = 0; i < st.hitEffects.length; i++) {
         const fx = st.hitEffects[i];
         const progress = 1 - fx.timer / fx.duration;
-        const waveRadius = bezelOuterR + 2 + progress * 18;
+        const waveRadius = bezelOuterR + 2 + progress * 16;
         ctx.save();
         ctx.globalAlpha = Math.max(0, 1 - progress);
         ctx.beginPath();
@@ -396,9 +400,8 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.lineWidth = Math.max(1, 2.2 * (1 - progress));
         ctx.stroke();
 
-        // Floating judgment text outside ring
-        const tx = cx + Math.cos(fx.angle) * (bezelOuterR + 18 + progress * 10);
-        const ty = cy + Math.sin(fx.angle) * (bezelOuterR + 18 + progress * 10);
+        const tx = cx + Math.cos(fx.angle) * (bezelOuterR + 15 + progress * 8);
+        const ty = cy + Math.sin(fx.angle) * (bezelOuterR + 15 + progress * 8);
         ctx.fillStyle = fx.color;
         ctx.font = '800 10px ui-monospace, Menlo, monospace';
         ctx.textAlign = 'center';
@@ -441,7 +444,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         ctx.font = '800 11px ui-monospace, Menlo, monospace';
         let centerText = 'READY';
         if (st.phase === 'PLAYING') {
-          centerText = st.lessonSlowActive ? 'SLOW 0.35×' : st.direction === 1 ? 'CW ↻' : 'CCW ↺';
+          centerText = st.lessonSlowActive ? 'DIAL 0.28×' : st.direction === 1 ? 'CW ↻' : 'CCW ↺';
         } else if (st.phase === 'PAUSED') {
           centerText = 'PAUSED';
         }
@@ -481,6 +484,39 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       ctx.fillStyle = needleColor;
       ctx.fill();
 
+      // osu!-Style Horizontal Hit Error Timing Bar below dial
+      const barW = Math.min(200, width * 0.56);
+      const barX = cx - barW / 2;
+      const barY = height - 9;
+
+      ctx.fillStyle = 'rgba(12, 14, 18, 0.85)';
+      ctx.fillRect(barX, barY - 4, barW, 8);
+      ctx.strokeStyle = '#242936';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY - 4, barW, 8);
+
+      // Perfect core band (24%)
+      const coreW = barW * 0.24;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+      ctx.fillRect(cx - coreW / 2, barY - 3, coreW, 6);
+
+      // Center zero marker
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx - 1, barY - 6, 2, 12);
+
+      // Fading strike ticks (early left / late right)
+      for (let i = 0; i < st.hitErrorTicks.length; i++) {
+        const tick = st.hitErrorTicks[i];
+        const alpha = Math.max(0, 1 - tick.age / 1.8);
+        if (alpha <= 0) continue;
+        const tx = cx + tick.offsetSigned * (barW / 2 - 2);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = tick.color;
+        ctx.fillRect(tx - 1.25, barY - 5, 2.5, 10);
+        ctx.restore();
+      }
+
       ctx.restore();
       rafId = requestAnimationFrame(drawFrame);
     };
@@ -494,14 +530,14 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
   }, [renderStateRef, themeId, bgFxMode]);
 
   return (
-    <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#050608] px-4 py-3">
+    <main className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden bg-transparent px-4 py-3">
       {/* Song Progress Bar */}
-      <div className="z-10 mb-2 flex w-[min(88vw,460px)] flex-col gap-1">
-        <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#9ca3af] tabular-nums">
+      <div className="z-10 mb-2 flex w-[min(88vw,480px)] flex-col gap-1">
+        <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#d1d5db] tabular-nums">
           <span className="truncate pr-2">{songHudTitle}</span>
           <span className="shrink-0">{songTimerText}</span>
         </div>
-        <div className="h-1 w-full overflow-hidden rounded-sm border border-[#222733] bg-[#141820]">
+        <div className="h-1.5 w-full overflow-hidden rounded-sm border border-[#222733] bg-[#0c0e12]/90">
           <div
             className="h-full bg-[var(--theme-primary)] transition-[width] duration-100 ease-linear"
             style={{ width: `${songProgressPct.toFixed(1)}%` }}
@@ -509,38 +545,45 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
         </div>
       </div>
 
-      {/* Live Score, Streak & Multiplier Strip */}
-      <div className="z-10 mb-2 flex items-baseline justify-center gap-6 sm:gap-9">
-        <div className="flex min-w-[82px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#6b7280]">Score</span>
+      {/* Live Score, Streak, Multiplier & Unbanked Orbs Strip */}
+      <div className="z-10 mb-1.5 flex items-baseline justify-center gap-5 sm:gap-8">
+        <div className="flex min-w-[74px] flex-col items-center">
+          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Score</span>
           <span className="tabular-nums text-3xl sm:text-4xl font-extrabold leading-tight text-[#f3f4f6]">
             {score.toLocaleString()}
           </span>
         </div>
-        <div className="flex min-w-[66px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#6b7280]">Combo</span>
+        <div className="flex min-w-[56px] flex-col items-center">
+          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Combo</span>
           <span className="tabular-nums text-xl font-bold leading-tight text-[#d1d5db]">
             {streak}x
           </span>
         </div>
-        <div className="flex min-w-[66px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#6b7280]">Mult</span>
+        <div className="flex min-w-[56px] flex-col items-center">
+          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Mult</span>
           <span className="tabular-nums text-xl font-bold leading-tight text-[var(--theme-bright)]">
             {totalMult.toFixed(2)}x
           </span>
         </div>
-        <div className="hidden sm:flex min-w-[66px] flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#6b7280]">Best</span>
-          <span className="tabular-nums text-xl font-bold leading-tight text-[#9ca3af]">
+        <div className="flex min-w-[64px] flex-col items-center" title="Unbanked Orbs (Requires C rank or higher to Cash Out)">
+          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#fbbf24]">Orbs</span>
+          <span className="flex items-center gap-1 tabular-nums text-xl font-extrabold leading-tight text-[#fbbf24]">
+            <Coins className="h-3.5 w-3.5" />
+            <span>+{unbankedOrbs}</span>
+          </span>
+        </div>
+        <div className="hidden sm:flex min-w-[56px] flex-col items-center">
+          <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#9ca3af]">Best</span>
+          <span className="tabular-nums text-xl font-bold leading-tight text-[#d1d5db]">
             {bestScore.toLocaleString()}
           </span>
         </div>
       </div>
 
-      {/* High-DPI Dial Canvas */}
+      {/* High-DPI Dial Canvas + Hit Error Meter */}
       <div
         ref={wrapRef}
-        className="relative flex h-[min(68vw,46vh,390px)] w-[min(68vw,46vh,390px)] items-center justify-center"
+        className="relative flex h-[min(70vw,48vh,405px)] w-[min(70vw,48vh,405px)] items-center justify-center"
       >
         <canvas
           ref={canvasRef}
@@ -554,17 +597,17 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
           className="block h-full w-full cursor-pointer touch-manipulation"
         />
 
-        {/* In-Song Slow-Motion Tutorial Highlight Callout */}
+        {/* In-Song Non-Distorting Dial Slow-Motion Tutorial Highlight Callout */}
         {activeLesson && (
-          <div className="pointer-events-auto absolute -bottom-2 left-1/2 z-20 w-[min(92vw,360px)] -translate-x-1/2 rounded-lg border border-[#fde047] bg-[#0c0e12] px-3.5 py-2.5">
+          <div className="pointer-events-auto absolute -bottom-1 left-1/2 z-20 w-[min(92vw,370px)] -translate-x-1/2 rounded-lg border border-[#fde047] bg-[#0c0e12]/95 px-3.5 py-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="tabular-nums text-[10px] font-extrabold tracking-widest uppercase text-[#fde047]">
-                Slow-Motion Lesson · {activeLesson.title}
+                Tutorial Guide · {activeLesson.title}
               </span>
               <button
                 type="button"
                 onClick={onSkipTutorial}
-                className="text-[10px] font-bold text-[#9ca3af] hover:text-white underline cursor-pointer"
+                className="text-[10px] font-bold text-[#9ca3af] hover:text-white underline cursor-pointer whitespace-nowrap"
               >
                 Skip Guide
               </button>
@@ -577,7 +620,7 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
       {/* Tutorial Complete Banner Stripe */}
       <div
         aria-live="polite"
-        className={`pointer-events-none fixed left-0 right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1 border-y-2 border-[var(--theme-primary)] bg-[#0c0e12] py-4 px-5 transition-all duration-200 ${
+        className={`pointer-events-none fixed left-0 right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1 border-y-2 border-[var(--theme-primary)] bg-[#0c0e12]/95 py-4 px-5 transition-all duration-200 ${
           showTutorialCompleteStripe ? 'scale-y-100 opacity-100' : 'scale-y-0 opacity-0'
         }`}
       >
@@ -588,17 +631,19 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
           Tutorial Complete
         </span>
         <span className="text-xs text-[#9ca3af]">
-          Normal Difficulty &amp; 4 Newgrounds Tracks Unlocked
+          Orb Cash-Out Unlocked · Spend Orbs in the Vault for Higher Tiers &amp; Newgrounds Tracks
         </span>
       </div>
 
       {/* Footer Wave & Streak Telemetry */}
-      <footer className="z-10 mt-3 flex min-h-[44px] flex-col items-center gap-1.5 text-center">
-        <p className="text-xs font-medium text-[#d1d5db] max-w-[92vw]">{promptHint}</p>
-        <div className="flex flex-wrap items-center justify-center gap-2.5 text-[11px] font-bold tracking-wider uppercase text-[#6b7280] tabular-nums">
+      <footer className="z-10 mt-2 flex min-h-[42px] flex-col items-center gap-1 text-center">
+        <p className="text-xs font-medium text-[#e5e7eb] max-w-[92vw]">{promptHint}</p>
+        <div className="flex flex-wrap items-center justify-center gap-2.5 text-[11px] font-bold tracking-wider uppercase text-[#9ca3af] tabular-nums">
           <span style={{ color: modeColor }}>{modeName}</span>
           <span aria-hidden="true">·</span>
-          <span>Combo {streakMult.toFixed(1)}x</span>
+          <span>Combo {streakMult.toFixed(2)}x</span>
+          <span aria-hidden="true">·</span>
+          <span>Hit Error: Early ◀ | ▶ Late</span>
           {shields > 0 && (
             <>
               <span aria-hidden="true">·</span>
@@ -617,7 +662,6 @@ export const OrbitStage: React.FC<OrbitStageProps> = ({
   );
 };
 
-// Re-export helper so callers can look up wave mode display info easily
 export function getWaveModeMeta(modeId: WaveModeId) {
   return WAVE_MODES.find((m) => m.id === modeId) || WAVE_MODES[0];
 }

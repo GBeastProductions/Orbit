@@ -2,6 +2,7 @@ import { DIFFICULTIES, MOD_CATALOG } from '../data/catalog';
 import {
   BeatmapNote,
   DifficultyId,
+  JudgmentTier,
   LetterRank,
   ModCode,
   SongDefinition,
@@ -28,14 +29,6 @@ export function formatTimeSec(sec: number): string {
   return `${mins}:${String(rem).padStart(2, '0')}`;
 }
 
-export function getStreakMultiplier(streak: number): number {
-  if (streak >= 40) return 4.0;
-  if (streak >= 25) return 3.0;
-  if (streak >= 15) return 2.0;
-  if (streak >= 6) return 1.5;
-  return 1.0;
-}
-
 export function computeModMultiplier(equippedMods: ModCode[]): number {
   let mult = 1.0;
   for (const code of equippedMods) {
@@ -43,6 +36,14 @@ export function computeModMultiplier(equippedMods: ModCode[]): number {
     if (mod) mult *= mod.mult;
   }
   return mult;
+}
+
+export function getStreakMultiplier(streak: number): number {
+  if (streak >= 40) return 1.25;
+  if (streak >= 25) return 1.18;
+  if (streak >= 12) return 1.1;
+  if (streak >= 5) return 1.05;
+  return 1.0;
 }
 
 export function computeTotalMultiplier(
@@ -54,22 +55,57 @@ export function computeTotalMultiplier(
   return diff.mult * computeModMultiplier(equippedMods) * getStreakMultiplier(streak);
 }
 
-export function computeLetterRank(accuracy: number, missCount: number, cleared: boolean): LetterRank {
-  if (!cleared) return 'D';
+/**
+ * Balanced per-hit points so a full Chill Tutorial clear (~60 notes) caps cleanly around ~180-210 points,
+ * while harder difficulties and dense subdivisions scale steadily upward.
+ */
+export function computeHitPoints(
+  tier: JudgmentTier,
+  diffId: DifficultyId,
+  equippedMods: ModCode[],
+  streak: number,
+): number {
+  const baseWeight = tier === 'PERFECT' ? 3 : tier === 'GREAT' ? 2 : tier === 'GOOD' ? 1 : 0;
+  if (baseWeight === 0) return 0;
+  const totalMult = computeTotalMultiplier(diffId, equippedMods, streak);
+  return Math.max(1, Math.round(baseWeight * totalMult));
+}
+
+/**
+ * osu!lazer style accuracy-and-miss rank calculation (SS, S, A, B, C, D, F)
+ */
+export function computeLetterRank(
+  accuracy: number,
+  missCount: number,
+  cleared: boolean,
+): LetterRank {
+  if (!cleared) return 'F';
   if (accuracy >= 99.5 && missCount === 0) return 'SS';
   if (accuracy >= 95 && missCount === 0) return 'S';
   if (accuracy >= 88) return 'A';
-  if (accuracy >= 75) return 'B';
-  if (accuracy >= 60) return 'C';
+  if (accuracy >= 76) return 'B';
+  if (accuracy >= 62) return 'C';
   return 'D';
+}
+
+export function isCashOutEligible(rank: LetterRank): boolean {
+  return rank === 'SS' || rank === 'S' || rank === 'A' || rank === 'B' || rank === 'C';
+}
+
+export function computeRankOrbBonus(rank: LetterRank, diffId: DifficultyId): number {
+  const tierScale =
+    diffId === 'DEMON' ? 2.0 : diffId === 'INSANE' ? 1.6 : diffId === 'HARD' ? 1.35 : diffId === 'NORMAL' ? 1.15 : 1.0;
+  if (rank === 'SS') return Math.round(30 * tierScale);
+  if (rank === 'S') return Math.round(15 * tierScale);
+  if (rank === 'A') return Math.round(6 * tierScale);
+  if (rank === 'B') return Math.round(3 * tierScale);
+  return 0;
 }
 
 export function getSectionAtProgress(song: SongDefinition, prog: number): SongSection {
   let current: SongSection = 'INTRO';
   for (const cue of song.sections) {
-    if (prog >= cue.startPct) {
-      current = cue.label;
-    }
+    if (prog >= cue.startPct) current = cue.label;
   }
   return current;
 }
@@ -86,7 +122,6 @@ function chooseWaveMode(
   const hasHD = equippedMods.includes('HD');
 
   if (isTutorialTrack) {
-    // Super approachable tutorial progression: CW -> CW -> CW -> CCW -> CW...
     if (idx < 3) return 'CW_GREEN';
     if (idx === 3) return 'CCW_RED';
     return idx % 4 === 2 ? 'CCW_RED' : 'CW_GREEN';
@@ -161,6 +196,10 @@ function chooseWaveMode(
   return modeId;
 }
 
+/**
+ * Scales beat subdivisions to different rhythmic layers of the 1.0x song
+ * (never speeding up or distorting the MP3).
+ */
 export function buildSongBeatmap(
   song: SongDefinition,
   diffId: DifficultyId,
@@ -169,12 +208,13 @@ export function buildSongBeatmap(
   const duration = Math.max(15, song.durationSec);
   const beatDur = 60 / Math.max(60, song.bpm);
   const isTutorialTrack = song.id === 'moments_passing';
+  const hasDenseSubdiv = equippedMods.includes('DT');
   const notes: BeatmapNote[] = [];
 
-  // If custom audio provided detected onsets, snap notes to real spectral peaks!
   if (song.isCustom && song.customOnsets && song.customOnsets.length >= 6) {
-    const minSpacing = diffId === 'CHILL' ? 1.15 : diffId === 'NORMAL' ? 0.85 : diffId === 'HARD' ? 0.65 : 0.5;
-    let lastTime = 0.6;
+    let minSpacing = diffId === 'CHILL' ? 1.25 : diffId === 'NORMAL' ? 0.9 : diffId === 'HARD' ? 0.68 : 0.52;
+    if (hasDenseSubdiv) minSpacing *= 0.8;
+    let lastTime = 0.65;
     let idx = 0;
 
     for (const onset of song.customOnsets) {
@@ -196,7 +236,6 @@ export function buildSongBeatmap(
     if (notes.length >= 4) return notes;
   }
 
-  // Standard deterministic BPM beatgrid aligned to song sections
   let t = Math.max(1.2, beatDur * 2);
   let idx = 0;
 
@@ -208,17 +247,22 @@ export function buildSongBeatmap(
 
     let stepBeats = 2.0;
     if (isTutorialTrack) {
-      stepBeats = isDrop ? 2.0 : 2.5;
+      // ~55-62 notes over 94s -> max ~180-210 score
+      stepBeats = isDrop ? 2.25 : 2.75;
     } else if (diffId === 'CHILL') {
-      stepBeats = isDrop ? 1.5 : 2.0;
+      stepBeats = isDrop ? 1.75 : 2.25;
     } else if (diffId === 'NORMAL') {
-      stepBeats = isDrop ? 1.0 : 1.5;
+      stepBeats = isDrop ? 1.25 : 1.5;
     } else if (diffId === 'HARD') {
       stepBeats = isDrop ? (idx % 2 === 0 ? 0.75 : 1.0) : 1.25;
     } else if (diffId === 'INSANE') {
       stepBeats = isDrop ? 0.75 : isBuild ? 0.75 : 1.0;
     } else {
       stepBeats = isDrop ? (idx % 3 === 0 ? 0.5 : 0.75) : 0.75;
+    }
+
+    if (hasDenseSubdiv && !isTutorialTrack) {
+      stepBeats *= 0.78;
     }
 
     const modeId = chooseWaveMode(diffId, section, idx, equippedMods, isTutorialTrack);

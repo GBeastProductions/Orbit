@@ -23,12 +23,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: "22"
       - name: Install dependencies
-        run: npm ci
-      - name: Build static bundle
-        run: npm run build
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and build static bundle
+        run: npm run lint && npm run build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

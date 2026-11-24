@@ -1,11 +1,12 @@
 import React from 'react';
-import { RotateCcw, ListMusic } from 'lucide-react';
+import { Coins, ListMusic, RotateCcw } from 'lucide-react';
 import { RunSummaryData } from '../types/game';
 
 interface RunSummaryModalProps {
   summary: RunSummaryData | null;
   onRetry: () => void;
-  onOpenTracks: () => void;
+  onOpenSongSelect: () => void;
+  onOpenOrbVault: () => void;
 }
 
 const RANK_COLORS: Record<string, string> = {
@@ -14,15 +15,22 @@ const RANK_COLORS: Record<string, string> = {
   A: 'text-[#34d399]',
   B: 'text-[#60a5fa]',
   C: 'text-[#c084fc]',
-  D: 'text-[#ef4444]',
+  D: 'text-[#fb923c]',
+  F: 'text-[#ef4444]',
 };
 
 export const RunSummaryModal: React.FC<RunSummaryModalProps> = ({
   summary,
   onRetry,
-  onOpenTracks,
+  onOpenSongSelect,
+  onOpenOrbVault,
 }) => {
   if (!summary) return null;
+
+  const rankClass =
+    summary.isSilverRank && (summary.rank === 'SS' || summary.rank === 'S')
+      ? 'text-[#e5e7eb]'
+      : RANK_COLORS[summary.rank] || 'text-[#f3f4f6]';
 
   return (
     <div
@@ -48,18 +56,47 @@ export const RunSummaryModal: React.FC<RunSummaryModalProps> = ({
           </div>
 
           <div className="flex flex-col items-center shrink-0 px-2">
-            <span className="text-[10px] font-bold tracking-widest uppercase text-[#6b7280]">Rank</span>
-            <span className={`font-display text-4xl font-black leading-none tabular-nums ${RANK_COLORS[summary.rank] || 'text-[#f3f4f6]'}`}>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-[#6b7280]">
+              {summary.isSilverRank ? 'Silver' : 'Rank'}
+            </span>
+            <span className={`font-display text-4xl font-black leading-none tabular-nums ${rankClass}`}>
               {summary.rank}
             </span>
           </div>
         </div>
 
-        {summary.unlockedTier && (
-          <div className="rounded-md border border-[var(--theme-primary)] bg-[var(--theme-dim)] px-3 py-2 text-xs font-bold text-[var(--theme-bright)]">
-            Unlocked {summary.unlockedTier} Difficulty Tier
+        {/* Orb Cash-Out Panel */}
+        <div
+          className={`rounded-lg border p-3 tabular-nums ${
+            summary.cashOutApproved
+              ? 'border-[#fbbf24]/60 bg-[#241904]/80'
+              : 'border-[#7f1d1d] bg-[#1f0b0e]/80'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-[#f3f4f6]">
+              <Coins className={`h-4 w-4 ${summary.cashOutApproved ? 'text-[#fbbf24]' : 'text-[#ef4444]'}`} />
+              <span>{summary.cashOutApproved ? 'Orb Cash-Out Banked' : 'Orbs Forfeited'}</span>
+            </span>
+            <span
+              className={`text-sm font-black ${
+                summary.cashOutApproved ? 'text-[#fde047]' : 'text-[#fca5a5]'
+              }`}
+            >
+              {summary.cashOutApproved ? `+${summary.cashedOutOrbs} Orbs` : '0 Orbs'}
+            </span>
           </div>
-        )}
+
+          {summary.cashOutApproved ? (
+            <p className="mt-1 text-[11px] text-[#fde68a]">
+              {summary.unbankedOrbs} Perfect Strike Orbs + {summary.rankBonusOrbs} Rank {summary.rank} Bonus banked cleanly.
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-[#fca5a5]">
+              {summary.unbankedOrbs} unbanked Orbs forfeited — finish with Rank C or higher to Cash Out.
+            </p>
+          )}
+        </div>
 
         <div className="grid grid-cols-3 gap-2 tabular-nums">
           <div className="rounded-md border border-[#222733] bg-[#141820] p-2.5">
@@ -96,26 +133,34 @@ export const RunSummaryModal: React.FC<RunSummaryModalProps> = ({
         </div>
 
         <div className="flex items-center justify-between text-xs text-[#9ca3af] tabular-nums">
-          <span>Average Center Offset: {summary.avgOffsetDeg.toFixed(1)}°</span>
+          <span>Avg Center Offset: {summary.avgOffsetDeg.toFixed(1)}°</span>
           <span>Space / J to quick retry</span>
         </div>
 
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
             type="button"
             onClick={onRetry}
-            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-xs font-bold text-[var(--theme-on-primary)] hover:bg-[var(--theme-bright)] transition-colors cursor-pointer"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-[var(--theme-primary)] px-3 py-2 text-xs font-bold text-[var(--theme-on-primary)] hover:bg-[var(--theme-bright)] transition-colors cursor-pointer whitespace-nowrap"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Play Again</span>
           </button>
           <button
             type="button"
-            onClick={onOpenTracks}
-            className="flex items-center justify-center gap-2 rounded-md border border-[#374052] bg-[#141820] px-4 py-2 text-xs font-semibold text-[#f3f4f6] hover:border-[var(--theme-primary)] transition-colors cursor-pointer"
+            onClick={onOpenSongSelect}
+            className="flex items-center justify-center gap-1.5 rounded-md border border-[#374052] bg-[#141820] px-3 py-2 text-xs font-semibold text-[#f3f4f6] hover:border-[var(--theme-primary)] transition-colors cursor-pointer whitespace-nowrap"
           >
             <ListMusic className="h-3.5 w-3.5" />
-            <span>Tracks</span>
+            <span>Song Select</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenOrbVault}
+            className="flex items-center justify-center gap-1.5 rounded-md border border-[#fbbf24]/50 bg-[#261a04] px-3 py-2 text-xs font-bold text-[#fbbf24] hover:border-[#fbbf24] transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Coins className="h-3.5 w-3.5" />
+            <span>Orb Vault</span>
           </button>
         </div>
       </div>

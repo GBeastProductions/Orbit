@@ -1,10 +1,12 @@
-export type ThemeId = 'emerald' | 'cobalt' | 'amber';
+export type ThemeId = 'emerald' | 'cobalt' | 'amber' | 'synthwave' | 'crimson';
 
 export type DifficultyId = 'CHILL' | 'NORMAL' | 'HARD' | 'INSANE' | 'DEMON';
 
 export type HitSfxMode = 'switch' | 'rimshot' | 'harmonic';
 
 export type BgFxMode = 'dynamic' | 'minimal';
+
+export type ScreenView = 'TITLE' | 'SONG_SELECT' | 'PLAYING';
 
 export type ModCode = 'DT' | 'HR' | 'OC' | 'OS' | 'HD' | 'SD' | 'SH' | 'EZ';
 
@@ -29,20 +31,16 @@ export type SongSection = 'INTRO' | 'BUILD-UP' | 'DROP' | 'BREAKDOWN' | 'OUTRO';
 
 export type JudgmentTier = 'PERFECT' | 'GREAT' | 'GOOD' | 'MISS';
 
-export type LetterRank = 'SS' | 'S' | 'A' | 'B' | 'C' | 'D';
+export type LetterRank = 'SS' | 'S' | 'A' | 'B' | 'C' | 'D' | 'F';
 
-export type GamePhase =
-  | 'IDLE'
-  | 'PLAYING'
-  | 'PAUSED'
-  | 'SUMMARY'
-  | 'TUTORIAL_CINEMATIC';
+export type GamePhase = 'IDLE' | 'PLAYING' | 'PAUSED' | 'SUMMARY' | 'TUTORIAL_CINEMATIC';
 
 export type PauseTabId = 'main' | 'tracks' | 'ctrl' | 'audio' | 'disp' | 'index';
 
 export interface ChassisTheme {
   id: ThemeId;
   label: string;
+  orbCost: number;
   primary: string;
   bright: string;
   dim: string;
@@ -57,6 +55,8 @@ export interface DifficultyConfig {
   id: DifficultyId;
   name: string;
   mult: number;
+  orbCost: number;
+  subdivisionBeats: number;
   baseSpeed: number;
   arcScale: number;
   desc: string;
@@ -65,6 +65,12 @@ export interface DifficultyConfig {
 export interface SongSectionCue {
   startPct: number;
   label: SongSection;
+}
+
+export interface SynthFallbackPattern {
+  style: 'arcade' | 'electro' | 'house' | 'rave';
+  chords: number[][];
+  lead: number[];
 }
 
 export interface SongDefinition {
@@ -79,12 +85,21 @@ export interface SongDefinition {
   scaleNotes: number[];
   durationSec: number;
   audioUrl: string;
+  bgImageUrl: string;
+  orbCost: number;
   chillOnly: boolean;
   isCustom?: boolean;
   customOnsets?: number[];
+  synthFallback?: SynthFallbackPattern;
   stars: Partial<Record<DifficultyId, string>>;
   desc: string;
   sections: SongSectionCue[];
+}
+
+export interface LevelBackgroundSetting {
+  dimPct: number;
+  blurPx: number;
+  customImageDataUrl?: string;
 }
 
 export interface WaveModeInfo {
@@ -146,13 +161,19 @@ export interface HitEffect {
   color: string;
 }
 
+export interface HitErrorTick {
+  offsetSigned: number; // -1 (early) .. +1 (late)
+  color: string;
+  age: number;
+}
+
 export interface TutorialLesson {
   id: string;
   triggerMode: WaveModeId | 'ANY';
   minWaveIndex: number;
   title: string;
   instruction: string;
-  highlightType: 'sector' | 'reverse' | 'bullseye' | 'double';
+  highlightType: 'sector' | 'reverse' | 'bullseye';
 }
 
 export interface SongRecord {
@@ -176,10 +197,15 @@ export interface PlayerProfile {
   audioOffsetMs: number;
   bgFxMode: BgFxMode;
   theme: ThemeId;
+  unlockedThemes: ThemeId[];
   selectedSongId: string;
   selectedDifficulty: DifficultyId;
   equippedMods: ModCode[];
   unlockedDiffs: DifficultyId[];
+  unlockedSongs: string[];
+  orbs: number;
+  totalOrbsEarned: number;
+  levelBgSettings: Record<string, LevelBackgroundSetting>;
   tutorialSongCompleted: boolean;
   devUnlocked: boolean;
   bestScore: number;
@@ -204,13 +230,17 @@ export interface RunSummaryData {
   maxCombo: number;
   accuracy: number;
   rank: LetterRank;
+  isSilverRank: boolean;
   perfectCount: number;
   greatCount: number;
   goodCount: number;
   missCount: number;
   avgOffsetDeg: number;
+  unbankedOrbs: number;
+  rankBonusOrbs: number;
+  cashedOutOrbs: number;
+  cashOutApproved: boolean;
   missReason?: string;
   missDegrees?: string;
   isNewBest: boolean;
-  unlockedTier?: DifficultyId | null;
 }

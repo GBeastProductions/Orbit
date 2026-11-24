@@ -15,10 +15,15 @@ export const INITIAL_PROFILE: PlayerProfile = {
   audioOffsetMs: 0,
   bgFxMode: 'dynamic',
   theme: 'emerald',
+  unlockedThemes: ['emerald', 'cobalt', 'amber'],
   selectedSongId: 'moments_passing',
   selectedDifficulty: 'CHILL',
   equippedMods: [],
   unlockedDiffs: ['CHILL'],
+  unlockedSongs: ['moments_passing', 'play_aliens', 'mecha', 'little_birdy', 'cosmic_colors'],
+  orbs: 0,
+  totalOrbsEarned: 0,
+  levelBgSettings: {},
   tutorialSongCompleted: false,
   devUnlocked: false,
   bestScore: 0,
@@ -33,7 +38,7 @@ export const INITIAL_PROFILE: PlayerProfile = {
   lateMisses: 0,
 };
 
-const VALID_THEMES: ThemeId[] = ['emerald', 'cobalt', 'amber'];
+const VALID_THEMES: ThemeId[] = ['emerald', 'cobalt', 'amber', 'synthwave', 'crimson'];
 
 export function loadProfile(): PlayerProfile {
   try {
@@ -48,11 +53,20 @@ export function loadProfile(): PlayerProfile {
         ...(parsed.tierBestScores || {}),
       },
       songRecords: { ...(parsed.songRecords || {}) },
+      levelBgSettings: { ...(parsed.levelBgSettings || {}) },
       equippedMods: Array.isArray(parsed.equippedMods) ? parsed.equippedMods.slice(0, 3) : [],
       unlockedDiffs:
         Array.isArray(parsed.unlockedDiffs) && parsed.unlockedDiffs.length > 0
           ? (parsed.unlockedDiffs.filter((d) => d in DIFFICULTIES) as DifficultyId[])
           : ['CHILL'],
+      unlockedSongs:
+        Array.isArray(parsed.unlockedSongs) && parsed.unlockedSongs.length > 0
+          ? parsed.unlockedSongs
+          : INITIAL_PROFILE.unlockedSongs,
+      unlockedThemes:
+        Array.isArray(parsed.unlockedThemes) && parsed.unlockedThemes.length > 0
+          ? (parsed.unlockedThemes.filter((t) => VALID_THEMES.includes(t)) as ThemeId[])
+          : INITIAL_PROFILE.unlockedThemes,
     };
     if (!VALID_THEMES.includes(merged.theme)) merged.theme = 'emerald';
     if (!(merged.selectedDifficulty in DIFFICULTIES)) merged.selectedDifficulty = 'CHILL';
@@ -66,6 +80,6 @@ export function saveProfile(profile: PlayerProfile): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
   } catch {
-    // Ignore storage quota errors in restricted incognito tabs
+    // Ignore storage quota errors cleanly
   }
 }

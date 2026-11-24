@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { audioEngine } from './audio/audioEngine';
+import { BackgroundBackdrop } from './components/BackgroundBackdrop';
 import { ModDrawer } from './components/ModDrawer';
 import { CanvasRenderState, getWaveModeMeta, OrbitStage } from './components/OrbitStage';
+import { OrbShopModal } from './components/OrbShopModal';
 import { PausePanel } from './components/PausePanel';
 import { RunSummaryModal } from './components/RunSummaryModal';
+import { SongSelectScreen } from './components/SongSelectScreen';
+import { TitleScreen } from './components/TitleScreen';
 import { TopBar } from './components/TopBar';
 import {
   CHASSIS_THEMES,
@@ -16,11 +20,14 @@ import {
 } from './data/catalog';
 import {
   buildSongBeatmap,
+  computeHitPoints,
   computeLetterRank,
+  computeRankOrbBonus,
   computeTotalMultiplier,
   formatTimeSec,
   getSectionAtProgress,
   getStreakMultiplier,
+  isCashOutEligible,
   signedAngleDiff,
   wrapAngle,
 } from './engine/beatmap';
@@ -30,11 +37,15 @@ import {
   BgFxMode,
   DifficultyId,
   GamePhase,
+  HitErrorTick,
   HitSfxMode,
+  JudgmentTier,
+  LevelBackgroundSetting,
   ModCode,
   PauseTabId,
   PlayerProfile,
   RunSummaryData,
+  ScreenView,
   SongDefinition,
   SongSection,
   TargetSector,
@@ -48,6 +59,7 @@ interface RuntimeEngine {
   score: number;
   streak: number;
   maxStreakInRun: number;
+  unbankedOrbs: number;
   shields: number;
   spinnerAngle: number;
   direction: 1 | -1;
@@ -77,6 +89,7 @@ interface RuntimeEngine {
     label: string;
     color: string;
   }[];
+  hitErrorTicks: HitErrorTick[];
   hubStatusText: string;
   hubStatusColor: string | null;
   hubStatusTimer: number;
@@ -93,14 +106,14 @@ interface RuntimeEngine {
   missCount: number;
   runOffsetDegSum: number;
   runHitCount: number;
-  // Tutorial & Cinematic
+  // Tutorial & Cinematic (dial-only slow-mo, song stays 1.0x)
   isTutorialRun: boolean;
   tutorialLives: number;
   shownLessonIds: Set<string>;
   activeLesson: TutorialLesson | null;
   lessonSlowActive: boolean;
   tutorialGuideDisabled: boolean;
-  timeScale: number;
+  dialTimeScale: number;
   cinematicTimer: number;
   dialVisualAlpha: number;
   dialSpinBoost: number;
@@ -120,19 +133,22 @@ function formatKeyLabel(e: KeyboardEvent): string {
 export default function App() {
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile());
   const [songs, setSongs] = useState<SongDefinition[]>(() => [...SONG_CATALOG]);
+  const [screen, setScreen] = useState<ScreenView>('TITLE');
   const [customAudioStatus, setCustomAudioStatus] = useState('');
 
   const [pauseOpen, setPauseOpen] = useState(false);
   const [pauseTab, setPauseTab] = useState<PauseTabId>('main');
   const [modsOpen, setModsOpen] = useState(false);
+  const [orbShopOpen, setOrbShopOpen] = useState(false);
   const [mustChooseTrack, setMustChooseTrack] = useState(false);
   const [listeningSlot, setListeningSlot] = useState<0 | 1 | 2>(0);
   const [summaryData, setSummaryData] = useState<RunSummaryData | null>(null);
   const [showTutorialCompleteStripe, setShowTutorialCompleteStripe] = useState(false);
 
-  // React UI state synced cleanly when discrete events happen (not 60fps!)
+  // React UI state synced cleanly on discrete events
   const [uiScore, setUiScore] = useState(0);
   const [uiStreak, setUiStreak] = useState(0);
+  const [uiUnbankedOrbs, setUiUnbankedOrbs] = useState(0);
   const [uiShields, setUiShields] = useState(0);
   const [uiSongTime, setUiSongTime] = useState(0);
   const [uiSection, setUiSection] = useState<SongSection>('INTRO');
@@ -148,17 +164,23 @@ export default function App() {
   profileRef.current = profile;
   const songsRef = useRef(songs);
   songsRef.current = songs;
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
   const pauseOpenRef = useRef(pauseOpen);
   pauseOpenRef.current = pauseOpen;
   const modsOpenRef = useRef(modsOpen);
   modsOpenRef.current = modsOpen;
+  const orbShopOpenRef = useRef(orbShopOpen);
+  orbShopOpenRef.current = orbShopOpen;
   const phaseBeforeOverlayRef = useRef<GamePhase>('IDLE');
+  const lastInputTimestampRef = useRef(0);
 
   const engineRef = useRef<RuntimeEngine>({
     phase: 'IDLE',
     score: 0,
     streak: 0,
     maxStreakInRun: 0,
+    unbankedOrbs: 0,
     shields: 0,
     spinnerAngle: -Math.PI / 2,
     direction: 1,
@@ -175,6 +197,7 @@ export default function App() {
     beatmap: [],
     beatmapIndex: 0,
     hitEffects: [],
+    hitErrorTicks: [],
     hubStatusText: 'READY',
     hubStatusColor: null,
     hubStatusTimer: 0,
@@ -197,7 +220,7 @@ export default function App() {
     activeLesson: null,
     lessonSlowActive: false,
     tutorialGuideDisabled: false,
-    timeScale: 1.0,
+    dialTimeScale: 1.0,
     cinematicTimer: 0,
     dialVisualAlpha: 1,
     dialSpinBoost: 0,
@@ -216,6 +239,7 @@ export default function App() {
     hazards: [],
     portal: null,
     hitEffects: [],
+    hitErrorTicks: [],
     hubStatusText: 'READY',
     hubStatusColor: null,
     hubStatusTimer: 0,
@@ -240,7 +264,6 @@ export default function App() {
     document.documentElement.style.setProperty('--theme-on-primary', t.onPrimary);
   }, [profile.theme]);
 
-  // Persist profile updates
   const updateProfile = useCallback((updater: Partial<PlayerProfile> | ((p: PlayerProfile) => PlayerProfile)) => {
     setProfile((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
@@ -256,11 +279,14 @@ export default function App() {
     [],
   );
 
-  const getEffectiveDifficulty = useCallback((p: PlayerProfile = profileRef.current, song?: SongDefinition) => {
-    const s = song || getActiveSong(p);
-    if (s.chillOnly) return 'CHILL' as DifficultyId;
-    return p.selectedDifficulty;
-  }, [getActiveSong]);
+  const getEffectiveDifficulty = useCallback(
+    (p: PlayerProfile = profileRef.current, song?: SongDefinition): DifficultyId => {
+      const s = song || getActiveSong(p);
+      if (s.chillOnly) return 'CHILL';
+      return p.selectedDifficulty;
+    },
+    [getActiveSong],
+  );
 
   const getBaseHalfWidth = useCallback((diffId: DifficultyId, mods: ModCode[]) => {
     const diff = DIFFICULTIES[diffId] || DIFFICULTIES.CHILL;
@@ -278,12 +304,38 @@ export default function App() {
         const rhythmSpeed = 2.55 / Math.max(0.32, stepSec);
         speed = 0.55 * diff.baseSpeed + 0.45 * rhythmSpeed;
       }
-      if (mods.includes('DT')) speed *= 1.25;
-      if (modeId === 'PURPLE_SURGE') speed *= 1.42;
-      return Math.max(1.25, Math.min(7.8, speed));
+      if (mods.includes('DT')) speed *= 1.22;
+      if (modeId === 'PURPLE_SURGE') speed *= 1.38;
+      return Math.max(1.2, Math.min(7.6, speed));
     },
     [],
   );
+
+  const startSongPreview = useCallback((song: SongDefinition, p: PlayerProfile = profileRef.current) => {
+    if (!p.musicEnabled) {
+      audioEngine.stop();
+      return;
+    }
+    const previewOffset = Math.min(song.durationSec * 0.28, 28);
+    audioEngine
+      .startAtOffset(
+        song,
+        previewOffset,
+        p.musicEnabled,
+        p.musicVolume,
+        p.soundEnabled,
+        p.sfxVolume,
+        true,
+        0.52,
+      )
+      .then((realDur) => {
+        if (realDur && Math.abs(realDur - song.durationSec) > 1.5) {
+          setSongs((prev) =>
+            prev.map((item) => (item.id === song.id ? { ...item, durationSec: realDur } : item)),
+          );
+        }
+      });
+  }, []);
 
   const finalizeRunSummary = useCallback(
     (cleared: boolean) => {
@@ -298,85 +350,61 @@ export default function App() {
       const weighted = eng.perfectCount * 1.0 + eng.greatCount * 0.75 + eng.goodCount * 0.45;
       const accuracy = totalAttempts > 0 ? (weighted / totalAttempts) * 100 : cleared ? 100 : 0;
       const rank = computeLetterRank(accuracy, eng.missCount, cleared);
+      const isSilverRank = p.equippedMods.includes('HD') && (rank === 'SS' || rank === 'S');
       const avgOffsetDeg = eng.runHitCount > 0 ? eng.runOffsetDegSum / eng.runHitCount : 0;
+
+      // Orb Cash-Out Rules: Orbs from PERFECT strikes + S/SS/A/B rank bonus ONLY bank on C rank or higher!
+      const cashOutApproved = !eng.sandboxModeId && isCashOutEligible(rank);
+      const rankBonusOrbs = cashOutApproved ? computeRankOrbBonus(rank, diffId) : 0;
+      const cashedOutOrbs = cashOutApproved ? eng.unbankedOrbs + rankBonusOrbs : 0;
 
       const prevRec = p.songRecords[song.id];
       const isNewBest = !prevRec || eng.score > prevRec.bestScore;
 
-      let unlockedTier: DifficultyId | null = null;
-      const nextUnlocked = new Set(p.unlockedDiffs);
-      if (cleared) {
-        const curIdx = DIFFICULTY_ORDER.indexOf(diffId);
-        if (curIdx >= 0 && curIdx + 1 < DIFFICULTY_ORDER.length) {
-          const nextId = DIFFICULTY_ORDER[curIdx + 1];
-          if (!nextUnlocked.has(nextId)) {
-            nextUnlocked.add(nextId);
-            unlockedTier = nextId;
-          }
-        }
-      }
+      const rankOrder = ['SS', 'S', 'A', 'B', 'C', 'D', 'F'];
+      const prevIdx = prevRec ? rankOrder.indexOf(prevRec.bestRank) : 99;
+      const curIdx = rankOrder.indexOf(rank);
+      const bestRank = prevRec && prevIdx >= 0 && prevIdx < curIdx ? prevRec.bestRank : rank;
 
-      const rankOrder = ['SS', 'S', 'A', 'B', 'C', 'D'];
-      const bestRank =
-        prevRec && rankOrder.indexOf(prevRec.bestRank) < rankOrder.indexOf(rank)
-          ? prevRec.bestRank
-          : rank;
-
-      const nextRecords = {
-        ...p.songRecords,
-        [song.id]: {
-          bestScore: Math.max(prevRec?.bestScore || 0, eng.score),
-          bestRank,
-          bestAccuracy: Math.max(prevRec?.bestAccuracy || 0, accuracy),
-          bestCombo: Math.max(prevRec?.bestCombo || 0, eng.maxStreakInRun),
-        },
-      };
+      const nextRecords = eng.sandboxModeId
+        ? p.songRecords
+        : {
+            ...p.songRecords,
+            [song.id]: {
+              bestScore: Math.max(prevRec?.bestScore || 0, eng.score),
+              bestRank,
+              bestAccuracy: Math.max(prevRec?.bestAccuracy || 0, accuracy),
+              bestCombo: Math.max(prevRec?.bestCombo || 0, eng.maxStreakInRun),
+            },
+          };
 
       const nextTierBests = { ...p.tierBestScores };
-      if (eng.score > (nextTierBests[diffId] || 0)) {
+      if (!eng.sandboxModeId && eng.score > (nextTierBests[diffId] || 0)) {
         nextTierBests[diffId] = eng.score;
       }
 
-      // Special First-Run Tutorial Completion Cinematic!
-      if (cleared && song.id === 'moments_passing' && !p.tutorialSongCompleted && !eng.sandboxModeId) {
-        audioEngine.playLevelClear(p.soundEnabled);
-        nextUnlocked.add('NORMAL');
-        updateProfile({
-          tutorialSongCompleted: true,
-          unlockedDiffs: Array.from(nextUnlocked),
-          songRecords: nextRecords,
-          tierBestScores: nextTierBests,
-          bestScore: Math.max(p.bestScore, eng.score),
-          bestStreak: Math.max(p.bestStreak, eng.maxStreakInRun),
-          selectedSongId: 'play_aliens',
-          selectedDifficulty: 'NORMAL',
-        });
+      const nextOrbs = p.orbs + cashedOutOrbs;
+      const nextTotalOrbs = p.totalOrbsEarned + cashedOutOrbs;
 
-        eng.phase = 'TUTORIAL_CINEMATIC';
-        eng.cinematicTimer = 0;
-        eng.activeLesson = null;
-        eng.lessonSlowActive = false;
-        setUiActiveLesson(null);
-        setUiPhase('TUTORIAL_CINEMATIC');
-        setMustChooseTrack(true);
-        return;
-      }
+      const nextTutorialDone =
+        p.tutorialSongCompleted ||
+        (cleared && song.id === 'moments_passing' && !eng.sandboxModeId);
 
       if (cleared) {
         audioEngine.playLevelClear(p.soundEnabled);
       }
 
       updateProfile({
-        unlockedDiffs: Array.from(nextUnlocked),
+        tutorialSongCompleted: nextTutorialDone,
+        orbs: nextOrbs,
+        totalOrbsEarned: nextTotalOrbs,
         songRecords: nextRecords,
         tierBestScores: nextTierBests,
-        bestScore: Math.max(p.bestScore, eng.score),
+        bestScore: Math.max(p.bestScore, eng.sandboxModeId ? 0 : eng.score),
         bestStreak: Math.max(p.bestStreak, eng.maxStreakInRun),
       });
 
-      eng.phase = 'SUMMARY';
-      setUiPhase('SUMMARY');
-      setSummaryData({
+      const summary: RunSummaryData = {
         cleared,
         songId: song.id,
         songTitle: song.title,
@@ -386,16 +414,36 @@ export default function App() {
         maxCombo: eng.maxStreakInRun,
         accuracy,
         rank,
+        isSilverRank,
         perfectCount: eng.perfectCount,
         greatCount: eng.greatCount,
         goodCount: eng.goodCount,
         missCount: eng.missCount,
         avgOffsetDeg,
+        unbankedOrbs: eng.unbankedOrbs,
+        rankBonusOrbs,
+        cashedOutOrbs,
+        cashOutApproved,
         missReason: cleared ? undefined : eng.missReason,
         missDegrees: cleared ? undefined : eng.missDegrees,
         isNewBest,
-        unlockedTier,
-      });
+      };
+
+      // Special First-Run Tutorial Completion Spin-Fade Cinematic before showing Summary
+      if (cleared && song.id === 'moments_passing' && !p.tutorialSongCompleted && !eng.sandboxModeId) {
+        eng.phase = 'TUTORIAL_CINEMATIC';
+        eng.cinematicTimer = 0;
+        eng.activeLesson = null;
+        eng.lessonSlowActive = false;
+        setUiActiveLesson(null);
+        setUiPhase('TUTORIAL_CINEMATIC');
+        setSummaryData(summary);
+        return;
+      }
+
+      eng.phase = 'SUMMARY';
+      setUiPhase('SUMMARY');
+      setSummaryData(summary);
     },
     [getActiveSong, getEffectiveDifficulty, updateProfile],
   );
@@ -533,7 +581,12 @@ export default function App() {
   );
 
   const resetRound = useCallback(
-    (autoStart: boolean, sandboxMode: WaveModeId | null = null, songOverride?: SongDefinition, diffOverride?: DifficultyId) => {
+    (
+      autoStart: boolean,
+      sandboxMode: WaveModeId | null = null,
+      songOverride?: SongDefinition,
+      diffOverride?: DifficultyId,
+    ) => {
       const p = profileRef.current;
       const song = songOverride || getActiveSong(p);
       const diffId = diffOverride || getEffectiveDifficulty(p, song);
@@ -549,11 +602,12 @@ export default function App() {
       eng.activeLesson = null;
       eng.lessonSlowActive = false;
       eng.tutorialGuideDisabled = false;
-      eng.timeScale = p.equippedMods.includes('DT') ? 1.25 : 1.0;
+      eng.dialTimeScale = 1.0;
 
       eng.score = 0;
       eng.streak = 0;
       eng.maxStreakInRun = 0;
+      eng.unbankedOrbs = 0;
       eng.shields = 0;
       eng.direction = 1;
       eng.spinnerAngle = -Math.PI / 2;
@@ -561,6 +615,7 @@ export default function App() {
       eng.songTime = 0;
       eng.songSection = 'INTRO';
       eng.hitEffects = [];
+      eng.hitErrorTicks = [];
       eng.hubStatusTimer = 0;
       eng.hubStatusColor = null;
       eng.shakeTime = 0;
@@ -581,6 +636,7 @@ export default function App() {
 
       setUiScore(0);
       setUiStreak(0);
+      setUiUnbankedOrbs(0);
       setUiShields(0);
       setUiSongTime(0);
       setUiSection('INTRO');
@@ -593,17 +649,17 @@ export default function App() {
       spawnNextWave(true, sandboxMode);
 
       if (autoStart) {
-        const rate = p.equippedMods.includes('DT') ? 1.25 : 1.0;
+        // Pure 1.0x audio playback — zero distortion
         audioEngine
           .startAtOffset(
             song,
             0,
-            rate,
             p.musicEnabled,
             p.musicVolume,
             p.soundEnabled,
             p.sfxVolume,
             Boolean(sandboxMode),
+            1.0,
           )
           .then((realDur) => {
             if (realDur && Math.abs(realDur - song.durationSec) > 1.5) {
@@ -619,7 +675,7 @@ export default function App() {
     [getActiveSong, getEffectiveDifficulty, spawnNextWave],
   );
 
-  // Initial round setup + preload active song buffer
+  // Initial setup + preload active song buffer
   useEffect(() => {
     resetRound(false, null);
     const active = getActiveSong();
@@ -638,12 +694,10 @@ export default function App() {
       const eng = engineRef.current;
       const p = profileRef.current;
 
-      // Clear slow-mo if active
       if (eng.lessonSlowActive) {
         eng.lessonSlowActive = false;
         eng.activeLesson = null;
-        eng.timeScale = p.equippedMods.includes('DT') ? 1.25 : 1.0;
-        audioEngine.setPlaybackRate(eng.timeScale);
+        eng.dialTimeScale = 1.0;
         setUiActiveLesson(null);
       }
 
@@ -700,6 +754,13 @@ export default function App() {
         const dirErr = signedAngleDiff(eng.spinnerAngle, ref.angle) * eng.direction;
         const isEarly = dirErr < 0;
 
+        eng.hitErrorTicks.push({
+          offsetSigned: isEarly ? -1 : 1,
+          color: '#ef4444',
+          age: 0,
+        });
+        if (eng.hitErrorTicks.length > 16) eng.hitErrorTicks.shift();
+
         updateProfile((prev) => ({
           ...prev,
           totalMisses: prev.totalMisses + 1,
@@ -717,7 +778,14 @@ export default function App() {
   );
 
   const handleTriggerAction = useCallback(() => {
-    if (pauseOpenRef.current || modsOpenRef.current) return;
+    if (screenRef.current !== 'PLAYING') return;
+    if (pauseOpenRef.current || modsOpenRef.current || orbShopOpenRef.current) return;
+
+    // 18ms anti-bounce guard prevents duplicate pointer+key double triggers without blocking fast alternating double-taps
+    const nowMs = performance.now();
+    if (nowMs - lastInputTimestampRef.current < 18) return;
+    lastInputTimestampRef.current = nowMs;
+
     const eng = engineRef.current;
     const p = profileRef.current;
 
@@ -771,21 +839,24 @@ export default function App() {
       return;
     }
 
-    // Resume normal tempo if we were in a slow-motion tutorial lesson!
+    // Resume normal dial tempo smoothly (audio was never slowed!)
     if (eng.lessonSlowActive) {
       eng.lessonSlowActive = false;
       eng.activeLesson = null;
-      eng.timeScale = p.equippedMods.includes('DT') ? 1.25 : 1.0;
-      audioEngine.setPlaybackRate(eng.timeScale);
+      eng.dialTimeScale = 1.0;
       setUiActiveLesson(null);
     }
 
     const ratio = bestAbsDelta / Math.max(0.01, hitTarget.halfWidth);
-    const isPerfect = ratio <= 0.24;
-    const isGreat = !isPerfect && ratio <= 0.62;
-    const tierLabel = isPerfect ? 'PERFECT' : isGreat ? 'GREAT' : 'GOOD';
-    const basePts = isPerfect ? 300 : isGreat ? 150 : 75;
-    const fxColor = isPerfect ? '#ffffff' : isGreat ? '#34d399' : '#38bdf8';
+    const tier: JudgmentTier = ratio <= 0.24 ? 'PERFECT' : ratio <= 0.62 ? 'GREAT' : 'GOOD';
+    const isPerfect = tier === 'PERFECT';
+    const fxColor = tier === 'PERFECT' ? '#ffffff' : tier === 'GREAT' ? '#34d399' : '#38bdf8';
+
+    // Record Hit Error Timing Meter tick
+    const signedErr = signedAngleDiff(eng.spinnerAngle, hitTarget.angle) * eng.direction;
+    const offsetSigned = Math.max(-1, Math.min(1, signedErr / Math.max(0.05, hitTarget.halfWidth + NEEDLE_TOLERANCE)));
+    eng.hitErrorTicks.push({ offsetSigned, color: fxColor, age: 0 });
+    if (eng.hitErrorTicks.length > 16) eng.hitErrorTicks.shift();
 
     const song = getActiveSong(p);
     const diffId = getEffectiveDifficulty(p, song);
@@ -814,13 +885,20 @@ export default function App() {
     eng.streak += 1;
     eng.maxStreakInRun = Math.max(eng.maxStreakInRun, eng.streak);
 
-    const mult = computeTotalMultiplier(diffId, p.equippedMods, eng.streak);
-    const pts = Math.max(10, Math.round(basePts * mult));
+    const pts = computeHitPoints(tier, diffId, p.equippedMods, eng.streak);
     eng.score += pts;
 
-    if (isPerfect) eng.perfectCount += 1;
-    else if (isGreat) eng.greatCount += 1;
-    else eng.goodCount += 1;
+    if (tier === 'PERFECT') {
+      eng.perfectCount += 1;
+      if (!eng.sandboxModeId) {
+        eng.unbankedOrbs += 1;
+        setUiUnbankedOrbs(eng.unbankedOrbs);
+      }
+    } else if (tier === 'GREAT') {
+      eng.greatCount += 1;
+    } else {
+      eng.goodCount += 1;
+    }
 
     const offsetDeg = bestAbsDelta * (180 / Math.PI);
     eng.runOffsetDegSum += offsetDeg;
@@ -837,12 +915,12 @@ export default function App() {
       duration: 0.36,
       angle: eng.spinnerAngle,
       isPerfect,
-      label: `${tierLabel} +${pts}`,
+      label: isPerfect && !eng.sandboxModeId ? `${tier} +${pts} (+1 Orb)` : `${tier} +${pts}`,
       color: fxColor,
     });
     if (eng.hitEffects.length > 5) eng.hitEffects.shift();
 
-    eng.hubStatusText = tierLabel;
+    eng.hubStatusText = tier;
     eng.hubStatusColor = fxColor;
     eng.hubStatusTimer = 0.42;
 
@@ -883,10 +961,15 @@ export default function App() {
       const p = profileRef.current;
       const song = getActiveSong(p);
 
-      // Update transient VFX
+      // Update transient VFX & Hit Error Meter ticks
       for (let i = eng.hitEffects.length - 1; i >= 0; i--) {
         eng.hitEffects[i].timer -= dt;
         if (eng.hitEffects[i].timer <= 0) eng.hitEffects.splice(i, 1);
+      }
+
+      for (let i = eng.hitErrorTicks.length - 1; i >= 0; i--) {
+        eng.hitErrorTicks[i].age += dt;
+        if (eng.hitErrorTicks[i].age >= 1.8) eng.hitErrorTicks.splice(i, 1);
       }
 
       if (eng.hubStatusTimer > 0) {
@@ -900,11 +983,10 @@ export default function App() {
         if (eng.shakeTime === 0) eng.shakeX = 0;
       }
 
-      // Beat telemetry LEDs
+      // Beat telemetry LEDs synced cleanly to natural 1.0x BPM
       eng.beatPulse = Math.max(0, eng.beatPulse - dt * 4.5);
-      const bpm = song.bpm * (p.equippedMods.includes('DT') ? 1.25 : 1.0);
       const tRef = eng.songTime > 0 ? eng.songTime : now / 1000;
-      const ledIdx = Math.floor(tRef / (60 / Math.max(60, bpm))) % 4;
+      const ledIdx = Math.floor(tRef / (60 / Math.max(60, song.bpm))) % 4;
       if (ledIdx !== eng.activeBeatLed) {
         eng.activeBeatLed = ledIdx;
         eng.beatPulse = 0.85;
@@ -939,18 +1021,17 @@ export default function App() {
           setShowTutorialCompleteStripe(false);
           eng.dialVisualAlpha = 1;
           eng.dialSpinBoost = 0;
-          resetRound(false, null);
-          setPauseTab('tracks');
-          setPauseOpen(true);
+          eng.phase = 'SUMMARY';
+          setUiPhase('SUMMARY');
         }
-      } else if (eng.phase === 'PLAYING') {
-        // Advance song timer synchronized to audio clock + user latency offset
+      } else if (eng.phase === 'PLAYING' && screenRef.current === 'PLAYING') {
+        // Song clock stays strictly 1.0x synced with audio + user offset
         const audioClock = audioEngine.syncClock();
         const offsetSec = p.audioOffsetMs / 1000;
         if (audioClock !== null && !eng.sandboxModeId) {
           eng.songTime = Math.max(0, audioClock + offsetSec);
         } else {
-          eng.songTime += dt * eng.timeScale;
+          eng.songTime += dt;
         }
 
         if (now - lastHudSync > 120) {
@@ -966,7 +1047,7 @@ export default function App() {
         if (!eng.sandboxModeId && eng.songTime >= song.durationSec) {
           finalizeRunSummary(true);
         } else {
-          // In-Song Slow-Motion Tutorial Checkpoints during first run of Moments Passing Us
+          // Non-Distorting Dial Slow-Motion Tutorial Checkpoints (music keeps playing cleanly at 1.0x)
           if (
             eng.isTutorialRun &&
             !eng.tutorialGuideDisabled &&
@@ -986,22 +1067,17 @@ export default function App() {
                 eng.shownLessonIds.add(nextLesson.id);
                 eng.lessonSlowActive = true;
                 eng.activeLesson = nextLesson;
-                eng.timeScale = 0.35;
-                audioEngine.setPlaybackRate(0.35);
+                eng.dialTimeScale = 0.28;
                 audioEngine.playLessonSlowCue(p.soundEnabled);
                 setUiActiveLesson(nextLesson);
               }
             }
           }
 
-          const targetRate = eng.lessonSlowActive
-            ? 0.35
-            : p.equippedMods.includes('DT')
-            ? 1.25
-            : 1.0;
-          eng.timeScale += (targetRate - eng.timeScale) * Math.min(1, dt * 8);
+          const targetDialScale = eng.lessonSlowActive ? 0.28 : 1.0;
+          eng.dialTimeScale += (targetDialScale - eng.dialTimeScale) * Math.min(1, dt * 10);
 
-          const simDt = dt * (eng.lessonSlowActive ? 0.35 : 1.0);
+          const simDt = dt * eng.dialTimeScale;
           eng.waveElapsed += simDt;
 
           if (eng.waveModeId === 'BRAKE_DRIFT') {
@@ -1046,7 +1122,7 @@ export default function App() {
             }
           }
 
-          // Fixed Multi-Target ONE-PASS Check (per-target window tracking)
+          // Multi-Target ONE-PASS Check
           if (eng.waveModeId === 'ONE_PASS' || p.equippedMods.includes('SD')) {
             const targetsToCheck =
               eng.waveModeId === 'ORDERED_SEQ' && eng.targets.length > 0
@@ -1079,6 +1155,7 @@ export default function App() {
       cs.hazards = eng.hazards;
       cs.portal = eng.portal;
       cs.hitEffects = eng.hitEffects;
+      cs.hitErrorTicks = eng.hitErrorTicks;
       cs.hubStatusText = eng.hubStatusText;
       cs.hubStatusColor = eng.hubStatusColor;
       cs.hubStatusTimer = eng.hubStatusTimer;
@@ -1104,9 +1181,11 @@ export default function App() {
   // Overlay Management
   const openPause = useCallback((tab: PauseTabId = 'main') => {
     setModsOpen(false);
+    setOrbShopOpen(false);
     if (!pauseOpenRef.current) {
-      phaseBeforeOverlayRef.current = engineRef.current.phase;
-      if (engineRef.current.phase === 'PLAYING') {
+      phaseBeforeOverlayRef.current =
+        screenRef.current === 'PLAYING' ? engineRef.current.phase : 'IDLE';
+      if (screenRef.current === 'PLAYING' && engineRef.current.phase === 'PLAYING') {
         engineRef.current.phase = 'PAUSED';
         setUiPhase('PAUSED');
         audioEngine.stop();
@@ -1126,11 +1205,12 @@ export default function App() {
       setPauseOpen(false);
 
       if (startSelectedSong) {
+        setScreen('PLAYING');
         resetRound(true, null);
         return;
       }
 
-      if (phaseBeforeOverlayRef.current === 'PLAYING') {
+      if (screenRef.current === 'PLAYING' && phaseBeforeOverlayRef.current === 'PLAYING') {
         const eng = engineRef.current;
         const p = profileRef.current;
         const song = getActiveSong(p);
@@ -1139,12 +1219,12 @@ export default function App() {
         audioEngine.startAtOffset(
           song,
           eng.songTime,
-          eng.timeScale,
           p.musicEnabled,
           p.musicVolume,
           p.soundEnabled,
           p.sfxVolume,
           Boolean(eng.sandboxModeId),
+          1.0,
         );
       }
     },
@@ -1153,9 +1233,11 @@ export default function App() {
 
   const openMods = useCallback(() => {
     setPauseOpen(false);
+    setOrbShopOpen(false);
     if (!modsOpenRef.current) {
-      phaseBeforeOverlayRef.current = engineRef.current.phase;
-      if (engineRef.current.phase === 'PLAYING') {
+      phaseBeforeOverlayRef.current =
+        screenRef.current === 'PLAYING' ? engineRef.current.phase : 'IDLE';
+      if (screenRef.current === 'PLAYING' && engineRef.current.phase === 'PLAYING') {
         engineRef.current.phase = 'PAUSED';
         setUiPhase('PAUSED');
         audioEngine.stop();
@@ -1166,7 +1248,7 @@ export default function App() {
 
   const closeMods = useCallback(() => {
     setModsOpen(false);
-    if (phaseBeforeOverlayRef.current === 'PLAYING') {
+    if (screenRef.current === 'PLAYING' && phaseBeforeOverlayRef.current === 'PLAYING') {
       const eng = engineRef.current;
       const p = profileRef.current;
       const song = getActiveSong(p);
@@ -1175,12 +1257,48 @@ export default function App() {
       audioEngine.startAtOffset(
         song,
         eng.songTime,
-        eng.timeScale,
         p.musicEnabled,
         p.musicVolume,
         p.soundEnabled,
         p.sfxVolume,
         Boolean(eng.sandboxModeId),
+        1.0,
+      );
+    }
+  }, [getActiveSong]);
+
+  const openOrbVault = useCallback(() => {
+    setPauseOpen(false);
+    setModsOpen(false);
+    if (!orbShopOpenRef.current) {
+      phaseBeforeOverlayRef.current =
+        screenRef.current === 'PLAYING' ? engineRef.current.phase : 'IDLE';
+      if (screenRef.current === 'PLAYING' && engineRef.current.phase === 'PLAYING') {
+        engineRef.current.phase = 'PAUSED';
+        setUiPhase('PAUSED');
+        audioEngine.stop();
+      }
+    }
+    setOrbShopOpen(true);
+  }, []);
+
+  const closeOrbVault = useCallback(() => {
+    setOrbShopOpen(false);
+    if (screenRef.current === 'PLAYING' && phaseBeforeOverlayRef.current === 'PLAYING') {
+      const eng = engineRef.current;
+      const p = profileRef.current;
+      const song = getActiveSong(p);
+      eng.phase = 'PLAYING';
+      setUiPhase('PLAYING');
+      audioEngine.startAtOffset(
+        song,
+        eng.songTime,
+        p.musicEnabled,
+        p.musicVolume,
+        p.soundEnabled,
+        p.sfxVolume,
+        Boolean(eng.sandboxModeId),
+        1.0,
       );
     }
   }, [getActiveSong]);
@@ -1214,17 +1332,23 @@ export default function App() {
 
       if (e.code === 'Escape') {
         e.preventDefault();
-        if (modsOpenRef.current) closeMods();
+        if (orbShopOpenRef.current) closeOrbVault();
+        else if (modsOpenRef.current) closeMods();
         else if (pauseOpenRef.current) closePause(false);
-        else openPause('main');
+        else if (screenRef.current === 'PLAYING') openPause('main');
+        else if (screenRef.current === 'SONG_SELECT') {
+          audioEngine.stop();
+          setScreen('TITLE');
+        }
         return;
       }
 
-      if (pauseOpenRef.current || modsOpenRef.current) return;
+      if (pauseOpenRef.current || modsOpenRef.current || orbShopOpenRef.current) return;
 
-      // Ignore triggers if user is typing inside an input
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      if (screenRef.current !== 'PLAYING') return;
 
       const p = profileRef.current;
       if (e.code === p.trigger1Code || e.code === p.trigger2Code) {
@@ -1235,14 +1359,156 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closeMods, closePause, getActiveSong, handleTriggerAction, listeningSlot, openPause, updateProfile]);
+  }, [
+    closeMods,
+    closeOrbVault,
+    closePause,
+    getActiveSong,
+    handleTriggerAction,
+    listeningSlot,
+    openPause,
+    updateProfile,
+  ]);
 
-  // Newgrounds ID Lookup & Local Custom MP3 Loader
+  // Screen Navigation Helpers
+  const enterSongSelect = useCallback(() => {
+    setSummaryData(null);
+    setPauseOpen(false);
+    setModsOpen(false);
+    setOrbShopOpen(false);
+    engineRef.current.phase = 'IDLE';
+    setUiPhase('IDLE');
+    setScreen('SONG_SELECT');
+    const active = getActiveSong();
+    startSongPreview(active);
+  }, [getActiveSong, startSongPreview]);
+
+  const returnToTitle = useCallback(() => {
+    audioEngine.stop();
+    setSummaryData(null);
+    setPauseOpen(false);
+    setModsOpen(false);
+    setOrbShopOpen(false);
+    engineRef.current.phase = 'IDLE';
+    setUiPhase('IDLE');
+    setScreen('TITLE');
+  }, []);
+
+  const launchGameplay = useCallback(
+    (songOverride?: SongDefinition, diffOverride?: DifficultyId) => {
+      setSummaryData(null);
+      setPauseOpen(false);
+      setModsOpen(false);
+      setOrbShopOpen(false);
+      setScreen('PLAYING');
+      resetRound(true, null, songOverride, diffOverride);
+    },
+    [resetRound],
+  );
+
+  // Orb Vault Purchase Handlers
+  const handleUnlockDifficulty = useCallback(
+    (diffId: DifficultyId, cost: number) => {
+      const p = profileRef.current;
+      if (p.devUnlocked || p.unlockedDiffs.includes(diffId)) return;
+      if (p.orbs < cost) {
+        audioEngine.playMiss(p.soundEnabled);
+        return;
+      }
+      audioEngine.playLevelClear(p.soundEnabled);
+      updateProfile((prev) => ({
+        ...prev,
+        orbs: prev.orbs - cost,
+        unlockedDiffs: prev.unlockedDiffs.includes(diffId)
+          ? prev.unlockedDiffs
+          : [...prev.unlockedDiffs, diffId],
+        selectedDifficulty: diffId,
+      }));
+    },
+    [updateProfile],
+  );
+
+  const handleUnlockSong = useCallback(
+    (songId: string, cost: number) => {
+      const p = profileRef.current;
+      if (p.devUnlocked || p.unlockedSongs.includes(songId)) return;
+      if (p.orbs < cost) {
+        audioEngine.playMiss(p.soundEnabled);
+        return;
+      }
+      audioEngine.playLevelClear(p.soundEnabled);
+      updateProfile((prev) => ({
+        ...prev,
+        orbs: prev.orbs - cost,
+        unlockedSongs: prev.unlockedSongs.includes(songId)
+          ? prev.unlockedSongs
+          : [...prev.unlockedSongs, songId],
+        selectedSongId: songId,
+      }));
+    },
+    [updateProfile],
+  );
+
+  const handleUnlockTheme = useCallback(
+    (themeId: ThemeId, cost: number) => {
+      const p = profileRef.current;
+      if (p.devUnlocked || p.unlockedThemes.includes(themeId)) return;
+      if (p.orbs < cost) {
+        audioEngine.playMiss(p.soundEnabled);
+        return;
+      }
+      audioEngine.playLevelClear(p.soundEnabled);
+      updateProfile((prev) => ({
+        ...prev,
+        orbs: prev.orbs - cost,
+        unlockedThemes: prev.unlockedThemes.includes(themeId)
+          ? prev.unlockedThemes
+          : [...prev.unlockedThemes, themeId],
+        theme: themeId,
+      }));
+    },
+    [updateProfile],
+  );
+
+  // Per-Level Background Artwork & Dim/Blur Handlers
+  const handleUpdateLevelBg = useCallback(
+    (songId: string, patch: Partial<LevelBackgroundSetting>) => {
+      updateProfile((prev) => {
+        const cur = prev.levelBgSettings[songId] || { dimPct: 68, blurPx: 4 };
+        return {
+          ...prev,
+          levelBgSettings: {
+            ...prev.levelBgSettings,
+            [songId]: { ...cur, ...patch },
+          },
+        };
+      });
+    },
+    [updateProfile],
+  );
+
+  const handleResetLevelBg = useCallback(
+    (songId: string) => {
+      updateProfile((prev) => {
+        const cur = prev.levelBgSettings[songId] || { dimPct: 68, blurPx: 4 };
+        return {
+          ...prev,
+          levelBgSettings: {
+            ...prev.levelBgSettings,
+            [songId]: { dimPct: cur.dimPct, blurPx: cur.blurPx },
+          },
+        };
+      });
+    },
+    [updateProfile],
+  );
+
+  // Newgrounds ID Lookup & Local Custom MP3 Loader (supports pairing onto curated NG tracks too!)
   const handleLookupNewgroundsId = useCallback(
     (ngId: string) => {
       const cleanId = ngId.trim();
       if (!cleanId) {
-        setCustomAudioStatus('Enter a numeric Newgrounds Audio ID (e.g. 1644660).');
+        setCustomAudioStatus('Enter a numeric Newgrounds Audio ID (e.g. 587069 or 1644660).');
         return;
       }
       const match = songsRef.current.find((s) => s.newgroundsId === cleanId);
@@ -1252,32 +1518,57 @@ export default function App() {
           : profileRef.current.selectedDifficulty;
         setMustChooseTrack(false);
         updateProfile({ selectedSongId: match.id, selectedDifficulty: diffId });
-        setCustomAudioStatus(`Matched bundled Newgrounds track #${cleanId}: ${match.title}!`);
-        setPauseOpen(false);
-        resetRound(true, null, match, diffId);
+        setCustomAudioStatus(`Matched catalog Newgrounds track #${cleanId}: ${match.title}!`);
+        if (screenRef.current === 'SONG_SELECT') {
+          startSongPreview(match);
+        } else {
+          setPauseOpen(false);
+          launchGameplay(match, diffId);
+        }
         return;
       }
 
       setCustomAudioStatus(
-        `NG #${cleanId} is external. Click "NG #${cleanId}" to open/download it on Newgrounds, then drop the MP3 into "Load Local MP3 / OGG" for offline beat-synced play!`,
+        `NG #${cleanId} is external. Click "NG #${cleanId}" to grab it on Newgrounds, then drop the MP3 into "Import MP3" for beat-synced play!`,
       );
     },
-    [resetRound, updateProfile],
+    [launchGameplay, startSongPreview, updateProfile],
   );
 
   const handleUploadCustomAudio = useCallback(
-    async (file: File, ngIdTag: string) => {
+    async (file: File, ngIdTag: string, targetSongId?: string) => {
       setCustomAudioStatus(`Decoding & beat-analyzing "${file.name}"...`);
-      const customId = `custom_${Date.now()}`;
-      const decoded = await audioEngine.decodeCustomFile(customId, file);
+      const songId = targetSongId || `custom_${Date.now()}`;
+      const decoded = await audioEngine.decodeCustomFile(songId, file);
       if (!decoded) {
         setCustomAudioStatus('Failed to decode audio file. Please try an MP3, WAV, or OGG file.');
         return;
       }
 
+      if (targetSongId) {
+        const existing = songsRef.current.find((s) => s.id === targetSongId);
+        if (existing) {
+          const updated: SongDefinition = {
+            ...existing,
+            durationSec: decoded.durationSec,
+            customOnsets: decoded.onsets,
+            isCustom: true,
+          };
+          setSongs((prev) => prev.map((s) => (s.id === targetSongId ? updated : s)));
+          setCustomAudioStatus(
+            `Paired "${file.name}" onto ${existing.title} (${decoded.durationSec.toFixed(0)}s synced).`,
+          );
+          if (screenRef.current === 'SONG_SELECT') {
+            startSongPreview(updated);
+          }
+          return;
+        }
+      }
+
       const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+      const defaultBg = songsRef.current[1]?.bgImageUrl || songsRef.current[0].bgImageUrl;
       const newSong: SongDefinition = {
-        id: customId,
+        id: songId,
         num: String(songsRef.current.length).padStart(2, '0'),
         newgroundsId: ngIdTag || 'LOCAL',
         artist: 'Custom Newgrounds / Local',
@@ -1288,6 +1579,8 @@ export default function App() {
         scaleNotes: [60, 62, 64, 67, 69, 72],
         durationSec: decoded.durationSec,
         audioUrl: '',
+        bgImageUrl: defaultBg,
+        orbCost: 0,
         chillOnly: false,
         isCustom: true,
         customOnsets: decoded.onsets,
@@ -1296,7 +1589,7 @@ export default function App() {
         sections: [
           { startPct: 0, label: 'INTRO' },
           { startPct: 0.16, label: 'BUILD-UP' },
-          { startPct: 0.30, label: 'DROP' },
+          { startPct: 0.3, label: 'DROP' },
           { startPct: 0.62, label: 'BREAKDOWN' },
           { startPct: 0.76, label: 'DROP' },
           { startPct: 0.92, label: 'OUTRO' },
@@ -1305,14 +1598,22 @@ export default function App() {
 
       setSongs((prev) => [...prev, newSong]);
       setMustChooseTrack(false);
-      updateProfile({ selectedSongId: customId });
+      updateProfile((prev) => ({
+        ...prev,
+        selectedSongId: songId,
+        unlockedSongs: [...prev.unlockedSongs, songId],
+      }));
       setCustomAudioStatus(
         `Loaded "${cleanTitle}" (${decoded.estimatedBpm} BPM, ${decoded.onsets.length} beats detected).`,
       );
-      setPauseOpen(false);
-      resetRound(true, null, newSong, profileRef.current.selectedDifficulty);
+      if (screenRef.current === 'SONG_SELECT') {
+        startSongPreview(newSong);
+      } else {
+        setPauseOpen(false);
+        launchGameplay(newSong, profileRef.current.selectedDifficulty);
+      }
     },
-    [resetRound, updateProfile],
+    [launchGameplay, startSongPreview, updateProfile],
   );
 
   // Derived UI Values
@@ -1323,17 +1624,18 @@ export default function App() {
   const totalMult = computeTotalMultiplier(activeDifficulty, profile.equippedMods, uiStreak);
   const modeMeta = getWaveModeMeta(uiWaveMode);
   const progressPct = Math.min(100, Math.max(0, (uiSongTime / Math.max(1, activeSong.durationSec)) * 100));
+  const activeLevelBg = profile.levelBgSettings[activeSong.id];
 
   const promptHint = useMemo(() => {
     if (uiPhase === 'IDLE') {
       return `Press ${profile.trigger1Label}, ${profile.trigger2Label}, or click the dial to start ${activeSong.title}`;
     }
-    if (uiPhase === 'PAUSED') return 'Paused · Select a track or click Resume';
+    if (uiPhase === 'PAUSED') return 'Paused · Resume or switch beatmaps anytime';
     if (uiSandboxMode) return `Field Sandbox · Testing ${modeMeta.name}`;
     if (uiIsTutorialRun) {
-      return `Tutorial Track · Time slows on new mechanics to guide you (${uiTutorialLives} shields)`;
+      return `Tutorial · Dial slows to highlight mechanics while music stays pure 1.0x (${uiTutorialLives} shields)`;
     }
-    return `Strike on the beat with ${profile.trigger1Label} or ${profile.trigger2Label}`;
+    return `Strike the inner white core for PERFECT (+1 Orb) · ${profile.trigger1Label} / ${profile.trigger2Label}`;
   }, [
     activeSong.title,
     modeMeta.name,
@@ -1346,58 +1648,127 @@ export default function App() {
   ]);
 
   return (
-    <div className="grid h-dvh w-full grid-rows-[54px_1fr] bg-[#050608] text-[#f3f4f6]">
-      <TopBar
-        activeSong={activeSong}
-        activeDifficulty={activeDifficulty}
-        unlockedDiffs={profile.unlockedDiffs}
-        devUnlocked={profile.devUnlocked}
-        equippedModsCount={profile.equippedMods.length}
-        totalMultiplier={totalMult}
-        beatLedIndex={uiBeatLed}
-        onOpenTracks={() => openPause('tracks')}
-        onSelectDifficulty={(diffId) => {
-          updateProfile({ selectedDifficulty: diffId });
-          resetRound(engineRef.current.phase === 'PLAYING', null, activeSong, diffId);
-        }}
-        onOpenMods={openMods}
-        onOpenPause={() => openPause('main')}
-      />
-
-      <OrbitStage
-        renderStateRef={canvasStateRef}
-        themeId={profile.theme}
+    <div className="relative h-dvh w-full overflow-hidden bg-[#050608] text-[#f3f4f6]">
+      {/* Per-Song Matching Artwork Backdrop + Dim/Blur + Retro Arcade Grid */}
+      <BackgroundBackdrop
+        defaultImageUrl={activeSong.bgImageUrl}
+        levelSetting={activeLevelBg}
         bgFxMode={profile.bgFxMode}
-        allowPointerTap={profile.allowPointerTap}
-        onTriggerTap={handleTriggerAction}
-        songHudTitle={`${activeSong.title.toUpperCase()} (${activeSong.artist}) · ${activeDifficulty} ${star}`}
-        songTimerText={`${formatTimeSec(uiSongTime)} / ${formatTimeSec(activeSong.durationSec)} · ${uiSection}`}
-        songProgressPct={progressPct}
-        score={uiScore}
-        streak={uiStreak}
-        bestScore={profile.bestScore}
-        streakMult={streakMult}
-        totalMult={totalMult}
-        modeName={modeMeta.name}
-        modeColor={modeMeta.color}
-        shields={uiShields}
-        isTutorialRun={uiIsTutorialRun}
-        tutorialLives={uiTutorialLives}
-        activeLesson={uiActiveLesson}
-        showTutorialCompleteStripe={showTutorialCompleteStripe}
-        promptHint={promptHint}
-        onSkipTutorial={() => {
-          const eng = engineRef.current;
-          eng.tutorialGuideDisabled = true;
-          eng.lessonSlowActive = false;
-          eng.activeLesson = null;
-          eng.timeScale = profile.equippedMods.includes('DT') ? 1.25 : 1.0;
-          audioEngine.setPlaybackRate(eng.timeScale);
-          setUiActiveLesson(null);
-        }}
+        forceDimPct={screen === 'TITLE' ? 76 : undefined}
+        forceBlurPx={screen === 'TITLE' ? 6 : undefined}
       />
 
-      {/* Opaque Backdrop Scrim */}
+      {screen === 'TITLE' && (
+        <TitleScreen
+          profile={profile}
+          activeSong={activeSong}
+          onEnterSongSelect={enterSongSelect}
+          onStartTutorial={() => {
+            const tutSong = songs.find((s) => s.id === 'moments_passing') || songs[0];
+            updateProfile({
+              tutorialSongCompleted: false,
+              selectedSongId: 'moments_passing',
+              selectedDifficulty: 'CHILL',
+            });
+            launchGameplay(tutSong, 'CHILL');
+          }}
+          onOpenOrbVault={openOrbVault}
+          onOpenSettings={() => openPause('ctrl')}
+          onOpenIndex={() => openPause('index')}
+        />
+      )}
+
+      {screen === 'SONG_SELECT' && (
+        <SongSelectScreen
+          profile={profile}
+          songs={songs}
+          customAudioStatus={customAudioStatus}
+          onBackToTitle={returnToTitle}
+          onPreviewSong={(songId) => {
+            const song = songs.find((s) => s.id === songId) || songs[0];
+            updateProfile({ selectedSongId: songId });
+            startSongPreview(song);
+          }}
+          onSelectDifficulty={(diffId) => {
+            updateProfile({ selectedDifficulty: diffId });
+          }}
+          onStartGame={() => {
+            const songUnlocked = profile.devUnlocked || profile.unlockedSongs.includes(activeSong.id);
+            const diffUnlocked = profile.devUnlocked || profile.unlockedDiffs.includes(activeDifficulty);
+            if (!songUnlocked || !diffUnlocked) {
+              openOrbVault();
+              return;
+            }
+            launchGameplay(activeSong, activeDifficulty);
+          }}
+          onOpenMods={openMods}
+          onOpenOrbVault={openOrbVault}
+          onUnlockDifficulty={handleUnlockDifficulty}
+          onUnlockSong={handleUnlockSong}
+          onUpdateLevelBg={handleUpdateLevelBg}
+          onResetLevelBg={handleResetLevelBg}
+          onLookupNewgroundsId={handleLookupNewgroundsId}
+          onUploadCustomAudio={handleUploadCustomAudio}
+        />
+      )}
+
+      {screen === 'PLAYING' && (
+        <div className="relative z-10 grid h-dvh w-full grid-rows-[54px_1fr]">
+          <TopBar
+            activeSong={activeSong}
+            activeDifficulty={activeDifficulty}
+            unlockedDiffs={profile.unlockedDiffs}
+            devUnlocked={profile.devUnlocked}
+            equippedModsCount={profile.equippedMods.length}
+            totalMultiplier={totalMult}
+            orbs={profile.orbs}
+            beatLedIndex={uiBeatLed}
+            onBackToSongSelect={enterSongSelect}
+            onSelectDifficulty={(diffId) => {
+              updateProfile({ selectedDifficulty: diffId });
+              resetRound(engineRef.current.phase === 'PLAYING', null, activeSong, diffId);
+            }}
+            onOpenOrbVault={openOrbVault}
+            onOpenMods={openMods}
+            onOpenPause={() => openPause('main')}
+          />
+
+          <OrbitStage
+            renderStateRef={canvasStateRef}
+            themeId={profile.theme}
+            bgFxMode={profile.bgFxMode}
+            allowPointerTap={profile.allowPointerTap}
+            onTriggerTap={handleTriggerAction}
+            songHudTitle={`${activeSong.title.toUpperCase()} (${activeSong.artist}) · ${activeDifficulty} ${star}`}
+            songTimerText={`${formatTimeSec(uiSongTime)} / ${formatTimeSec(activeSong.durationSec)} · ${uiSection}`}
+            songProgressPct={progressPct}
+            score={uiScore}
+            streak={uiStreak}
+            bestScore={profile.songRecords[activeSong.id]?.bestScore || 0}
+            unbankedOrbs={uiUnbankedOrbs}
+            streakMult={streakMult}
+            totalMult={totalMult}
+            modeName={modeMeta.name}
+            modeColor={modeMeta.color}
+            shields={uiShields}
+            isTutorialRun={uiIsTutorialRun}
+            tutorialLives={uiTutorialLives}
+            activeLesson={uiActiveLesson}
+            showTutorialCompleteStripe={showTutorialCompleteStripe}
+            promptHint={promptHint}
+            onSkipTutorial={() => {
+              const eng = engineRef.current;
+              eng.tutorialGuideDisabled = true;
+              eng.lessonSlowActive = false;
+              eng.activeLesson = null;
+              eng.dialTimeScale = 1.0;
+              setUiActiveLesson(null);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Opaque Backdrop Scrim for Slide-Over / Bottom Drawers */}
       {(pauseOpen || modsOpen) && (
         <div
           aria-hidden="true"
@@ -1419,12 +1790,14 @@ export default function App() {
         listeningSlot={listeningSlot}
         onStartRebind={(slot) => setListeningSlot(slot)}
         onResume={() => closePause(false)}
+        onGoToSongSelect={enterSongSelect}
+        onGoToTitle={returnToTitle}
+        onOpenOrbVault={openOrbVault}
         onSelectTrack={(songId, diffId) => {
           const targetSong = songs.find((s) => s.id === songId) || songs[0];
           setMustChooseTrack(false);
           updateProfile({ selectedSongId: songId, selectedDifficulty: diffId });
-          setPauseOpen(false);
-          resetRound(true, null, targetSong, diffId);
+          launchGameplay(targetSong, diffId);
         }}
         onLookupNewgroundsId={handleLookupNewgroundsId}
         onUploadCustomAudio={handleUploadCustomAudio}
@@ -1432,20 +1805,23 @@ export default function App() {
         onTogglePointer={() => updateProfile((p) => ({ ...p, allowPointerTap: !p.allowPointerTap }))}
         onReplayTutorial={() => {
           setMustChooseTrack(false);
-          setPauseOpen(false);
           const tutSong = songs.find((s) => s.id === 'moments_passing') || songs[0];
           updateProfile({
             tutorialSongCompleted: false,
             selectedSongId: 'moments_passing',
             selectedDifficulty: 'CHILL',
           });
-          resetRound(true, null, tutSong, 'CHILL');
+          launchGameplay(tutSong, 'CHILL');
         }}
         onUpdateAudioOffset={(ms) => updateProfile({ audioOffsetMs: ms })}
         onToggleMusic={() => {
           const next = !profile.musicEnabled;
           updateProfile({ musicEnabled: next });
           audioEngine.updateVolumes(next, profile.musicVolume, profile.soundEnabled, profile.sfxVolume);
+          if (screenRef.current === 'SONG_SELECT') {
+            if (next) startSongPreview(activeSong, { ...profile, musicEnabled: true });
+            else audioEngine.stop();
+          }
         }}
         onMusicVolume={(vol) => {
           updateProfile({ musicVolume: vol });
@@ -1479,6 +1855,8 @@ export default function App() {
           updateProfile({
             devUnlocked: true,
             unlockedDiffs: [...DIFFICULTY_ORDER],
+            unlockedSongs: songs.map((s) => s.id),
+            unlockedThemes: Object.keys(CHASSIS_THEMES) as ThemeId[],
             tutorialSongCompleted: true,
           });
           audioEngine.playLevelClear(profile.soundEnabled);
@@ -1487,6 +1865,8 @@ export default function App() {
         onResetCareer={() => {
           updateProfile((prev) => ({
             ...prev,
+            orbs: 0,
+            totalOrbsEarned: 0,
             bestScore: 0,
             tierBestScores: { CHILL: 0, NORMAL: 0, HARD: 0, INSANE: 0, DEMON: 0 },
             songRecords: {},
@@ -1521,6 +1901,7 @@ export default function App() {
         onTestWaveSandbox={(modeId) => {
           setMustChooseTrack(false);
           setPauseOpen(false);
+          setScreen('PLAYING');
           resetRound(true, modeId);
         }}
       />
@@ -1544,12 +1925,27 @@ export default function App() {
         onClose={closeMods}
       />
 
+      <OrbShopModal
+        open={orbShopOpen}
+        profile={profile}
+        songs={songs}
+        onUnlockDifficulty={handleUnlockDifficulty}
+        onUnlockSong={handleUnlockSong}
+        onUnlockTheme={handleUnlockTheme}
+        onEquipTheme={(themeId) => {
+          updateProfile({ theme: themeId });
+          audioEngine.playHit(profile.soundEnabled, profile.hitSfxMode, 2, true, activeSong.scaleNotes);
+        }}
+        onClose={closeOrbVault}
+      />
+
       <RunSummaryModal
-        summary={summaryData}
+        summary={uiPhase === 'SUMMARY' ? summaryData : null}
         onRetry={() => resetRound(true, engineRef.current.sandboxModeId)}
-        onOpenTracks={() => {
+        onOpenSongSelect={enterSongSelect}
+        onOpenOrbVault={() => {
           setSummaryData(null);
-          openPause('tracks');
+          openOrbVault();
         }}
       />
     </div>
